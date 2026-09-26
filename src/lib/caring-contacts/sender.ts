@@ -39,6 +39,19 @@
 // preferred name or mobile number, nothing is sent and the contact is recorded `missed`, which
 // every screen shows as needing review.
 //
+// CARRIER RATE LIMITING. When the carrier answers "too many requests" (reason
+// `carrier-rate-limited`, see ./transport/telstra.ts), the contact it refused is recorded missed
+// like any other refusal -- nothing reached the patient and nothing is re-sent -- but the run then
+// STOPS CLAIMING further contacts. Every other contact due now stays `scheduled` for the next run,
+// still inside its own approved window (a window that closes meanwhile records it missed, never
+// late). Carrying on would only have turned a throttle into a string of missed caring messages.
+//
+// HEARTBEAT. A run that completes -- including one that finds the service stopped or nothing due --
+// records the instant it finished (`recordSenderHeartbeat`), so the readiness probe on any app
+// instance can tell a running sender from a dead one. A run that THROWS records nothing: a sender
+// failing on every run is not a working sender. A heartbeat the store refuses or fails to write is
+// reported (`heartbeatRecorded: false`) and never stops the run.
+//
 // PRIVACY. The report this returns and everything it logs carry synthetic ids and reason codes
 // only -- never a name, a phone number or message text.
 import { randomUUID } from "node:crypto";
@@ -55,6 +68,7 @@ import { DEFAULT_CONTACT_RETRY_POLICY, type ContactRetryPolicy } from "./service
 import { serviceStopBlocksDispatch } from "./service-state";
 import type { PathwayVersion } from "./pathway-versions";
 import { isDesignatedFictionalMobile, toAustralianMobileE164 } from "./transport/phone";
+import { CARRIER_RATE_LIMITED_REASON } from "./transport/telstra";
 import type { MessageTransport } from "./transport/types";
 
 export const SENDER_ACTOR_ID = actorId("system-contact-sender");
@@ -115,6 +129,10 @@ export type SenderRunReport = {
   startedAt: string;
   transport: MessageTransport["kind"];
   serviceStopped: boolean;
+  /** The carrier throttled a send, so this run stopped claiming contacts (see the file header). */
+  carrierRateLimited: boolean;
+  /** Whether this run's heartbeat was stored. False with no teams configured, or if the write failed. */
+  heartbeatRecorded: boolean;
   outcomes: SenderContactOutcome[];
 };
 
@@ -144,22 +162,44 @@ function windowClosed(stored: StoredContact, now: Date): boolean {
 
 export async function runContactSender(input: RunContactSenderInput): Promise<SenderRunReport> {
   const now = input.clock.now();
-  const policy = input.retryPolicy ?? DEFAULT_CONTACT_RETRY_POLICY;
-  const dispatchDelayMs = calculateRetryDelayMs(0, policy.backoffMs) ?? 0;
   const report: SenderRunReport = {
     startedAt: now.toISOString(),
     transport: input.transport.kind,
     serviceStopped: false,
+    carrierRateLimited: false,
+    heartbeatRecorded: false,
     outcomes: [],
   };
+  // No teams configured means this sender works for nobody, so it records no heartbeat either --
+  // in live mode that surfaces as a stalled sender rather than as a healthy one doing nothing.
   if (input.teamIds.length === 0) return report;
+
+  await runSenderPasses(input, report, now);
+
+  // Only reached when the run completed. The first configured team's dispatcher writes it: the
+  // heartbeat is service-wide, and the store accepts it from the system dispatcher only.
+  try {
+    const recorded = await input.store.recordSenderHeartbeat(
+      { at: input.clock.now() },
+      { actor: senderActorsForTeam(input.teamIds[0]).dispatcher },
+    );
+    report.heartbeatRecorded = recorded.ok;
+  } catch {
+    report.heartbeatRecorded = false;
+  }
+  return report;
+}
+
+async function runSenderPasses(input: RunContactSenderInput, report: SenderRunReport, now: Date): Promise<void> {
+  const policy = input.retryPolicy ?? DEFAULT_CONTACT_RETRY_POLICY;
+  const dispatchDelayMs = calculateRetryDelayMs(0, policy.backoffMs) ?? 0;
 
   // The stop is service-wide and readable by any actor. Checked once up front so a stopped service
   // makes no writes at all; the store refuses a dispatch write during a stop as well.
   const firstReader = senderActorsForTeam(input.teamIds[0]).reader;
   if (serviceStopBlocksDispatch(await input.store.getServiceState({ actor: firstReader }))) {
     report.serviceStopped = true;
-    return report;
+    return;
   }
 
   for (const teamId of input.teamIds) {
@@ -187,9 +227,10 @@ export async function runContactSender(input: RunContactSenderInput): Promise<Se
           (a, b) => a.planned.sendAt.getTime() - b.planned.sendAt.getTime(),
         );
         for (const stored of sendable) {
+          if (report.carrierRateLimited) break;
           if (now.getTime() < stored.planned.sendAt.getTime() + dispatchDelayMs) continue;
           try {
-            await dispatchOne(input, record, stored, { reader, dispatcher, pathways, now, note });
+            await dispatchOne(input, record, stored, { reader, dispatcher, pathways, now, note, report });
           } catch (error) {
             note(stored, "error", error instanceof Error ? error.name : "unknown-error");
           }
@@ -206,7 +247,6 @@ export async function runContactSender(input: RunContactSenderInput): Promise<Se
       }
     }
   }
-  return report;
 }
 
 type DispatchContext = {
@@ -215,6 +255,7 @@ type DispatchContext = {
   pathways: Map<PathwayVersionId, PathwayVersion | null>;
   now: Date;
   note: (stored: StoredContact, outcome: SenderOutcomeKind, reason?: string) => void;
+  report: SenderRunReport;
 };
 
 async function markMissed(
@@ -305,6 +346,7 @@ async function dispatchOne(
   });
 
   if (result.outcome === "rejected") {
+    if (result.reason === CARRIER_RATE_LIMITED_REASON) context.report.carrierRateLimited = true;
     const marked = await markMissed(input, record, contactId, claimed.value.contact.version, dispatcher);
     note(stored, marked.ok ? "notSentCarrierRefused" : "error", marked.ok ? result.reason : marked.reason);
     return;

@@ -63,9 +63,14 @@ import type {
 } from "./ids";
 import { contactSendability, TERMINAL_PLAN_STATES } from "./model";
 import type { Contact, Plan, PlanState, ProviderStatus, Referral, SendingPreference, TransitionResult } from "./model";
-import type { NotificationPreferences } from "./notification-preferences";
+import { ALERT_CLASSES, type AlertClass, type NotificationPreferences } from "./notification-preferences";
 import type { PathwayVersion, PathwayVersionAction } from "./pathway-versions";
-import type { CaringContactAction, CaringContactActor } from "./permissions";
+import {
+  canPerformCaringContactAction,
+  isSystemActor,
+  type CaringContactAction,
+  type CaringContactActor,
+} from "./permissions";
 import type { ReferralIntakePayload } from "./referral-intake";
 import type { ReferralAction } from "./referrals";
 import type {
@@ -1030,7 +1035,56 @@ export interface CaringContactRepository {
   listSendableContacts(planId: PlanId, context: ReadContext): Promise<StoredContact[]>;
   listAuditEvents(context: ReadContext): Promise<AuditEvent[]>;
   getEpisode(planId: PlanId, context: ReadContext): Promise<Episode | null>;
+
+  // -------------------------------------------------------------------------------------------
+  // Staff alerts and sender heartbeat (feature: staff alert delivery, migration 0020)
+  //
+  // Operational bookkeeping, not clinical records: none of these holds patient content, none is
+  // idempotency-keyed, and none writes an audit event (0020 explains why). Every WRITE is refused
+  // to a human actor -- only software (a `SystemActor`) records that it ran or that it sent an
+  // alert. The reads are safe for any actor: they return alert classes and instants only.
+  // -------------------------------------------------------------------------------------------
+  /**
+   * The alert classes at least ONE member of the actor's own team has opted in to, each once, in
+   * `ALERT_CLASSES` order. Classes only -- never who opted in. Answered for a system actor (the
+   * alert deliverer) or an actor who manages their own preferences; empty for anybody else.
+   */
+  listTeamAlertOptIns(context: ReadContext): Promise<AlertClass[]>;
+  /**
+   * Records that the background sender finished a run at `at`. Never moves the heartbeat
+   * backwards: an overlapping run that finishes with an earlier instant leaves the later one.
+   * Refused (`permission-denied`) unless the actor is the system contact dispatcher.
+   */
+  recordSenderHeartbeat(input: { at: Date }, context: ReadContext): Promise<TransitionResult<SenderHeartbeat>>;
+  /** When the sender last finished a run, or null if it never has. Service-wide; any actor. */
+  getSenderHeartbeat(context: ReadContext): Promise<SenderHeartbeat | null>;
+  /**
+   * Atomically claims the right to deliver one alert: `claimed` (and the delivery instant is
+   * stored) when no alert of this class was delivered for this scope within `cooldownMs` before
+   * `at`; `coolingDown` otherwise. Two concurrent claims inside one cooldown: exactly one wins.
+   * Refused to a human actor.
+   */
+  claimStaffAlert(input: StaffAlertClaimInput, context: ReadContext): Promise<TransitionResult<StaffAlertClaim>>;
+  /**
+   * Gives back a claim whose delivery FAILED, so the next attempt is not held off by a cooldown for
+   * an alert nobody received. Only removes the claim made at exactly `at`; a later claim stands.
+   * Refused to a human actor.
+   */
+  releaseStaffAlert(input: StaffAlertReleaseInput, context: ReadContext): Promise<TransitionResult<void>>;
 }
+
+// --- Staff alerts and sender heartbeat (feature: staff alert delivery) --------------------------
+export type SenderHeartbeat = { lastRunAt: Date };
+export type StaffAlertClaim = "claimed" | "coolingDown";
+/**
+ * `scope` names whose alert this is: a team id, `service` for a service-wide condition, or
+ * `service-stop:<instant>` for one particular safety stop. Identifier characters only (migration
+ * 0020 checks the shape), never prose.
+ */
+export type StaffAlertClaimInput = { scope: string; alertClass: AlertClass; at: Date; cooldownMs: number };
+export type StaffAlertReleaseInput = { scope: string; alertClass: AlertClass; at: Date };
+/** Must agree with `staff_alert_deliveries_scope_shape` in migration 0020. */
+export const STAFF_ALERT_SCOPE_PATTERN = /^[A-Za-z0-9:._-]{1,128}$/;
 
 /**
  * Every store in this domain is built this way, so one contract suite can run against all of them.
@@ -1044,4 +1098,26 @@ export type CaringContactRepositoryFactory = (
 /** Deterministic contact identifier, so the same plan always produces the same contact ids. */
 export function contactIdentifierFor(planId: PlanId, sequence: number): string {
   return `${planId}--contact-${sequence}`;
+}
+
+/** Both stores ask this before any staff-alert or heartbeat WRITE: software only, never a person. */
+export function mayWriteOperationalRecord(actor: CaringContactActor): boolean {
+  return isSystemActor(actor);
+}
+
+/** Who may read the team's opted-in alert classes: the alert deliverer, or a preferences holder. */
+export function mayReadTeamAlertOptIns(actor: CaringContactActor): boolean {
+  return (
+    isSystemActor(actor) ||
+    canPerformCaringContactAction(actor, "manageNotificationPreferences", { teamId: actor.teamId }).allowed
+  );
+}
+
+/**
+ * The union of several people's opt-ins, each class once, in `ALERT_CLASSES` order -- so both
+ * stores answer identically. A stored value that is not a known class is dropped, not passed on.
+ */
+export function unionOfAlertOptIns(optedIn: readonly (readonly string[])[]): AlertClass[] {
+  const seen = new Set(optedIn.flat());
+  return ALERT_CLASSES.filter((alertClass) => seen.has(alertClass));
 }

@@ -11,6 +11,7 @@
 // sent answers 409 so the carrier tries again shortly.
 //
 // Nothing from the body is logged or echoed: a carrier receipt can carry the phone number.
+import { raiseDeliveryReceiptAlert } from "@/lib/caring-contacts-server/staff-alerts";
 import { caringContactsStore } from "@/lib/caring-contacts-server/store";
 import { isCaringContactsWorkspaceEnabled } from "@/lib/caring-contacts-server/workspace-gate";
 import { contactId, planId, teamId } from "@/lib/caring-contacts/ids";
@@ -48,14 +49,21 @@ export async function POST(request: Request): Promise<Response> {
     return json({ refusal: "invalid-request" }, 400);
   }
 
+  const store = await caringContactsStore();
+  const mapped = providerStatusFromCarrier(status);
   const result = await recordDeliveryReceipt({
-    store: await caringContactsStore(),
+    store,
     teamId: teamId(reference.teamId),
     planId: planId(reference.planId),
     contactId: contactId(reference.contactId),
-    status: providerStatusFromCarrier(status),
+    status: mapped,
   });
   logger.info("Caring Contacts delivery receipt", { result });
+  // Staff alert delivery: a newly recorded "not delivered" report is a permanent delivery failure
+  // for the team. Not awaited, so the carrier's answer never waits on an alert channel.
+  void raiseDeliveryReceiptAlert(store, { teamId: teamId(reference.teamId), status: mapped, result }).catch(
+    () => undefined,
+  );
   if (result === "notYetSent") return json({ result }, 409);
   // The store refused the write (for example during a service safety stop): ask the carrier to retry.
   if (result === "refused") return json({ result }, 503);

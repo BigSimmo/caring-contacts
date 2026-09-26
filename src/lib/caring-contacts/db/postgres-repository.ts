@@ -20,7 +20,7 @@ import type { Episode } from "../episode";
 import { fingerprintOf } from "../fingerprint";
 import type { ContactId, PathwayVersionId, PlanId, ReferralId, TeamId } from "../ids";
 import type { Referral, TransitionResult } from "../model";
-import type { NotificationPreferences } from "../notification-preferences";
+import type { AlertClass, NotificationPreferences } from "../notification-preferences";
 import type { PathwayVersion } from "../pathway-versions";
 import { actorRoleNames } from "../permissions";
 import {
@@ -45,6 +45,10 @@ import {
   type RepositoryOptions,
   type ResolveDiscrepancyInput,
   type SavePathwayVersionInput,
+  type SenderHeartbeat,
+  type StaffAlertClaim,
+  type StaffAlertClaimInput,
+  type StaffAlertReleaseInput,
   type StoredContact,
   type WithdrawPlanInput,
   type WriteContext,
@@ -62,6 +66,7 @@ import { createContactsStore, toStoredContact, type ContactsStore } from "./modu
 import { createPlansStore, type PlansStore } from "./modules/plans-store";
 import { createResponderNotesStore, type ResponderNotesStore } from "./modules/responder-notes-store";
 import { createTeamStore, type TeamStore } from "./modules/team-store";
+import { createStaffAlertsStore, type StaffAlertsStore } from "./modules/staff-alerts-store";
 import {
   auditTokenFactory,
   decodeStoredValue,
@@ -262,6 +267,8 @@ export class PostgresCaringContactsRepository implements CaringContactRepository
   private readonly responderNotesStore: ResponderNotesStore;
   private readonly auditStore: AuditStore;
   private readonly teamStore: TeamStore;
+  // Staff alerts and sender heartbeat (feature: staff alert delivery).
+  private readonly staffAlertsStore: StaffAlertsStore;
 
   constructor(pool: SqlConnectionPool, clock: Clock, options: RepositoryOptions = {}) {
     this.ctx = createPostgresRepositoryContext(pool, clock, options);
@@ -270,6 +277,7 @@ export class PostgresCaringContactsRepository implements CaringContactRepository
     this.responderNotesStore = createResponderNotesStore(this.ctx);
     this.auditStore = createAuditStore(this.ctx);
     this.teamStore = createTeamStore(this.ctx);
+    this.staffAlertsStore = createStaffAlertsStore(this.ctx);
 
     // Wire pluggable cross-module delegates
     this.ctx.readServiceState = (conn, forUpdate) => this.responderNotesStore.readServiceState(conn, forUpdate);
@@ -498,6 +506,30 @@ export class PostgresCaringContactsRepository implements CaringContactRepository
 
   listAuditEvents(context: ReadContext): Promise<AuditEvent[]> {
     return this.auditStore.listAuditEvents(context);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Staff alerts and sender heartbeat (feature: staff alert delivery, migration 0020)
+  // ---------------------------------------------------------------------------
+
+  listTeamAlertOptIns(context: ReadContext): Promise<AlertClass[]> {
+    return this.staffAlertsStore.listTeamAlertOptIns(context);
+  }
+
+  recordSenderHeartbeat(input: { at: Date }, context: ReadContext): Promise<TransitionResult<SenderHeartbeat>> {
+    return this.staffAlertsStore.recordSenderHeartbeat(input, context);
+  }
+
+  getSenderHeartbeat(context: ReadContext): Promise<SenderHeartbeat | null> {
+    return this.staffAlertsStore.getSenderHeartbeat(context);
+  }
+
+  claimStaffAlert(input: StaffAlertClaimInput, context: ReadContext): Promise<TransitionResult<StaffAlertClaim>> {
+    return this.staffAlertsStore.claimStaffAlert(input, context);
+  }
+
+  releaseStaffAlert(input: StaffAlertReleaseInput, context: ReadContext): Promise<TransitionResult<void>> {
+    return this.staffAlertsStore.releaseStaffAlert(input, context);
   }
 }
 

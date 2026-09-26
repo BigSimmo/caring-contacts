@@ -12,6 +12,12 @@
 // (CONNECTION_TEST_MESSAGE) to that number and records nothing in the store -- the owner's
 // "test with a staff phone first" step. The number is never logged or echoed back.
 //
+// After each run, the staff alerts that run calls for (failed deliveries, a review backlog,
+// carrier rate limiting) are delivered through the configured channel -- see
+// src/lib/caring-contacts-server/staff-alerts.ts. Alert delivery never throws and never changes
+// this route's answer: a caring message matters more than the alert about it. The sender records
+// its own heartbeat, which the readiness probe reads.
+//
 // The response holds synthetic ids and reason codes only.
 import { z } from "zod";
 
@@ -22,6 +28,7 @@ import {
   senderTeamIds,
   senderTransport,
 } from "@/lib/caring-contacts-server/contact-sender";
+import { raiseSenderRunAlerts } from "@/lib/caring-contacts-server/staff-alerts";
 import { caringContactsStore } from "@/lib/caring-contacts-server/store";
 import { isCaringContactsWorkspaceEnabled } from "@/lib/caring-contacts-server/workspace-gate";
 import { systemClock } from "@/lib/caring-contacts/clock";
@@ -86,8 +93,9 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
+  const store = await caringContactsStore();
   const report = await runContactSender({
-    store: await caringContactsStore(),
+    store,
     transport: resolved.transport,
     clock: systemClock(),
     teamIds: senderTeamIds(),
@@ -98,7 +106,12 @@ export async function POST(request: Request): Promise<Response> {
   logger.info("Caring Contacts sender run", {
     transport: report.transport,
     serviceStopped: report.serviceStopped,
+    carrierRateLimited: report.carrierRateLimited,
+    heartbeatRecorded: report.heartbeatRecorded,
     counts,
   });
-  return json({ ...report, counts }, 200);
+  const alerts = await raiseSenderRunAlerts(store, report);
+  const alertCounts: Record<string, number> = {};
+  for (const alert of alerts) alertCounts[alert.outcome] = (alertCounts[alert.outcome] ?? 0) + 1;
+  return json({ ...report, counts, alerts: alertCounts }, 200);
 }
