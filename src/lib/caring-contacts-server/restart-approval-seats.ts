@@ -21,6 +21,7 @@ import {
   type RestartApprovalSeatRoster,
 } from "@/lib/caring-contacts/service-state";
 
+import { caringContactsDatabaseUrl } from "./config";
 import { demoActorForRole } from "./session";
 
 export const RESTART_APPROVAL_SEATS_VAR = "CARING_CONTACTS_RESTART_APPROVAL_SEATS";
@@ -67,4 +68,17 @@ export function parseRestartApprovalSeats(raw: string | undefined): RestartAppro
 
 export function liveRestartApprovalSeats(): RestartApprovalSeatRoster {
   return parseRestartApprovalSeats(process.env[RESTART_APPROVAL_SEATS_VAR]);
+}
+
+/**
+ * The roster the running store was built with, for a screen that has to say which seats the acting
+ * person holds (the service stop screen).
+ *
+ * The SAME choice `./store.ts` and `./demo-seed.ts` make: the live roster when a database is
+ * configured, the demo roster otherwise. It only decides which approval controls are OFFERED; the
+ * store still decides every approval against its own roster, so a disagreement here could at worst
+ * offer a control the store then refuses by name -- never record an approval it should not.
+ */
+export function restartApprovalSeatsInForce(): RestartApprovalSeatRoster {
+  return caringContactsDatabaseUrl() ? liveRestartApprovalSeats() : DEMO_RESTART_APPROVAL_SEATS;
 }

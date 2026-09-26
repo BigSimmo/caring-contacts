@@ -349,3 +349,30 @@ function formatList(items: readonly string[]): string {
   if (items.length <= 1) return items.join("");
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
+
+// ---------------------------------------------------------------------------
+// Service stop screen (owner request 2026-09-26: "The emergency safety stop has no button")
+// ---------------------------------------------------------------------------
+
+/**
+ * The plain-words wording above, exported for the service stop screen so that the screen, the
+ * banner and the restart seats all say the same thing about the same fact. A second copy in a
+ * component is how "the clinical programme lead" comes to mean two different things -- the reason
+ * `CARING_CONTACT_ROLE_WORDING` lives in the sealed domain too.
+ *
+ * Both go through the own-property lookup (Ruling 61), so an identifier outside the closed union
+ * throws rather than rendering an inherited function's source.
+ */
+export function serviceStopReasonWording(reason: ServiceStopReason): string {
+  return stopReasonWording(reason);
+}
+
+export function restartApprovalRoleWording(role: ServiceRestartApprovalRole): string {
+  if (!Object.hasOwn(APPROVAL_ROLE_WORDING, role)) {
+    throw new Error(
+      `No plain-words wording for the restart approval seat "${role}". Ruling 61: add an entry to ` +
+        `APPROVAL_ROLE_WORDING deliberately.`,
+    );
+  }
+  return APPROVAL_ROLE_WORDING[role];
+}
