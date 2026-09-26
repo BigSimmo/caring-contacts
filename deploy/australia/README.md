@@ -95,7 +95,7 @@ docker inspect -f '{{.State.Health.Status}}' caring-contacts-sovereign-app
 Expected results in the demo smoke test:
 
 - The readiness probe answers `HTTP/1.1 200 OK` with `Cache-Control: no-store` and
-  `{"ok":true,"store":"in-memory","caringContactsDatabase":"skipped"}`.
+  `{"ok":true,"store":"in-memory","caringContactsDatabase":"skipped","sender":"not-monitored","alerts":"simulated"}`.
 - `http://127.0.0.1:3000/caring-contacts` shows the workspace with invented example patients.
 - `/mockups/...` answers 404 (the design prototypes stay closed in production unless
   `CARING_CONTACTS_MOCKUPS_ENABLED=true`).
@@ -112,6 +112,8 @@ How the container fails closed when it is not deliberately switched on:
   `unhealthy`.
 - With a dedicated database configured, the probe answers 200 only when `select 1` succeeds
   against it, and 503 otherwise.
+- With real text messages or live mode on, the probe also answers 503 with `"sender":"stalled"`
+  when no sender run has finished recently (see "Staff alerts" below).
 
 Stop and clean up afterwards:
 
@@ -352,7 +354,8 @@ How it works, in short:
    - **The exact shape of a delivery report**, and whether Telstra keeps the signed part of the
      report address (everything after the `?`). If it does not, every report will be refused.
    - **Rate limits and error formats.** Nothing was published. A refusal is recorded as not sent and
-     is never retried automatically.
+     is never retried automatically. A "too many requests" answer stops that run and raises a
+     staff alert (see "Staff alerts" below).
    - **Where Telstra stores and handles messages** (see step 2).
 2. **Open a Telstra Messaging API account** for the health service (Telstra Developer portal or your
    Telstra account manager). Ask for written confirmation that messages are carried and stored in
@@ -417,6 +420,48 @@ How it works, in short:
 Each run prints only counts and reason codes (for example `sent=3 needsReview=1`), never names,
 numbers or message text. If the service safety stop is raised, runs print "SERVICE STOPPED: nothing
 sent" and make no changes.
+
+If Telstra answers "too many requests", the message it refused is recorded as not sent (for a
+person to review, never re-sent), the rest of that run sends nothing more, and the remaining due
+messages go out on the next run if their window is still open. A "carrier rate limiting" staff
+alert is raised.
+
+## Staff alerts and the sender health check
+
+Staff can choose alerts in their settings, and the service now actually sends them. An alert says
+only what kind of problem it is, how many items, a fixed reason code and the team, for example
+"Caring Contacts staff alert: 2 items affected by permanent delivery failure. Reason:
+messages-not-sent. Team: team-north." It never contains a patient's name, number or message.
+
+**Where alerts go.** Staff sign-in keeps no email address or phone number for anyone, so alerts go
+to one **team channel**: a Microsoft Teams or Slack incoming webhook, or an email relay that
+accepts a JSON POST. Set `CARING_CONTACTS_ALERT_DELIVERY=webhook` and
+`CARING_CONTACTS_ALERT_WEBHOOK_URL` (section 3c of the example file). Setting only one of them is
+refused. Without them, alerts are only written to the log.
+
+**Which alerts go.**
+
+- Failed deliveries, messages needing checking, and similar patient-work alerts go only when at
+  least one person in that team has switched that alert on in their settings.
+- Three safety alerts always go, whatever anyone chose: a **safety stop** was raised, the
+  **background sender has stopped** running, and the **carrier is rate-limiting** messages.
+- The same alert is not repeated for an hour while the problem continues
+  (`CARING_CONTACTS_ALERT_COOLDOWN_MINUTES`). If the channel cannot be reached, the next attempt is
+  not held back.
+
+**The health check.** `/api/caring-contacts/ready` now also reports `sender` and `alerts`. With real
+sending or live mode on, it answers 503 when no sender run has finished for 15 minutes
+(`CARING_CONTACTS_SENDER_STALL_MINUTES`); a newly started app waits that long before judging. When
+it does, it also sends the "sender stopped" alert, because a dead sender cannot report itself. It
+answers 503 in every mode if the alert settings are refused.
+
+**One thing to decide.** The container's Docker health check uses this same address. When the
+sender stops, Docker (and ECS or Azure) will mark the app unhealthy and may restart or replace it,
+even though the app itself is fine and the fix is to restart the sender. That keeps the problem
+visible, but it also interrupts staff using the app. If your platform replaces unhealthy
+containers, give its restart check a much longer retry allowance, or a check that only asks
+whether the app answers at all, and point your monitoring and paging at
+`/api/caring-contacts/ready`.
 
 ---
 

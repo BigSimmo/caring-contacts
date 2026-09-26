@@ -1810,4 +1810,94 @@ describe("the workspace schema", () => {
       ).rejects.toThrow(/foreign key constraint/i);
     });
   });
+
+  // Migration 0020 (staff alert delivery): the sender heartbeat and the alert cooldown claims. Both
+  // are SERVICE-WIDE on purpose -- one sender for every team -- so any team's session reads and
+  // writes them, an unscoped session sees nothing, and no audit guard is attached (software
+  // telemetry, written every five minutes). Every assertion runs as `caring_contacts_app`.
+  describe("sender heartbeat and staff alert cooldowns (0020)", () => {
+    it("forces row-level security on both tables", async () => {
+      const { rows } = await pool.query<{ relname: string; relrowsecurity: boolean; relforcerowsecurity: boolean }>(
+        `select c.relname, c.relrowsecurity, c.relforcerowsecurity
+         from pg_class c join pg_namespace n on n.oid = c.relnamespace
+         where n.nspname = 'caring_contacts' and c.relname in ('sender_heartbeats', 'staff_alert_deliveries')
+         order by c.relname`,
+      );
+      expect(rows).toEqual([
+        { relname: "sender_heartbeats", relrowsecurity: true, relforcerowsecurity: true },
+        { relname: "staff_alert_deliveries", relrowsecurity: true, relforcerowsecurity: true },
+      ]);
+    });
+
+    it("lets any team's session write and read them, with no audit event, and hides them from an unscoped one", async () => {
+      await runInTeamSession(pool, { teamId: TEAM_NORTH }, async (client) => {
+        await client.query("insert into caring_contacts.sender_heartbeats (id, last_run_at) values ('sender', now())");
+        await client.query(
+          `insert into caring_contacts.staff_alert_deliveries (scope, alert_class, last_sent_at)
+           values ('service', 'senderStalled', now())`,
+        );
+      });
+
+      const south = await runInTeamSession(pool, { teamId: TEAM_SOUTH }, async (client) => ({
+        heartbeats: (await client.query("select id from caring_contacts.sender_heartbeats")).rows,
+        claims: (await client.query("select scope from caring_contacts.staff_alert_deliveries")).rows,
+      }));
+      expect(south).toEqual({ heartbeats: [{ id: "sender" }], claims: [{ scope: "service" }] });
+
+      const unscoped = await runInTeamSession(pool, { teamId: null }, async (client) => ({
+        heartbeats: (await client.query("select id from caring_contacts.sender_heartbeats")).rows,
+        claims: (await client.query("select scope from caring_contacts.staff_alert_deliveries")).rows,
+      }));
+      expect(unscoped).toEqual({ heartbeats: [], claims: [] });
+
+      const anonymous = await runInTeamSession(
+        pool,
+        { teamId: TEAM_NORTH, role: ANON_ROLE },
+        async (client) => (await client.query("select id from caring_contacts.sender_heartbeats")).rows,
+      );
+      expect(anonymous).toEqual([]);
+
+      await expect(
+        runInTeamSession(pool, { teamId: null }, (client) =>
+          client.query("insert into caring_contacts.sender_heartbeats (id, last_run_at) values ('sender', now())"),
+        ),
+      ).rejects.toThrow(/row-level security/);
+    });
+
+    it("keeps the heartbeat a singleton and the claims to known classes and identifier-shaped scopes", async () => {
+      const write = (sql: string) => runInTeamSession(pool, { teamId: TEAM_NORTH }, (client) => client.query(sql));
+      await expect(
+        write("insert into caring_contacts.sender_heartbeats (id, last_run_at) values ('second-sender', now())"),
+      ).rejects.toThrow(/sender_heartbeats_is_singleton/);
+      await expect(
+        write(
+          `insert into caring_contacts.staff_alert_deliveries (scope, alert_class, last_sent_at)
+           values ('service', 'notAnAlertClass', now())`,
+        ),
+      ).rejects.toThrow(/staff_alert_deliveries_class_is_known/);
+      await expect(
+        write(
+          `insert into caring_contacts.staff_alert_deliveries (scope, alert_class, last_sent_at)
+           values ('Rowan was not contacted', 'senderStalled', now())`,
+        ),
+      ).rejects.toThrow(/staff_alert_deliveries_scope_shape/);
+      // Positive control: a well-formed stop scope is accepted.
+      await expect(
+        write(
+          `insert into caring_contacts.staff_alert_deliveries (scope, alert_class, last_sent_at)
+           values ('service-stop:2026-03-02T03:00:00.000Z', 'serviceSafetyStop', now())`,
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it("lists every alert class the domain declares in the class check, and no others", async () => {
+      const { ALERT_CLASSES } = await import("@/lib/caring-contacts/notification-preferences");
+      const { rows } = await pool.query<{ definition: string }>(
+        `select pg_get_constraintdef(c.oid) as definition from pg_constraint c
+         where c.conname = 'staff_alert_deliveries_class_is_known'`,
+      );
+      const inCheck = [...rows[0].definition.matchAll(/'([A-Za-z]+)'/g)].map((match) => match[1]).sort();
+      expect(inCheck).toEqual([...ALERT_CLASSES].sort());
+    });
+  });
 });

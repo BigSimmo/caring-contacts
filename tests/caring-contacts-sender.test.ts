@@ -377,3 +377,121 @@ describe("delivery receipts", () => {
     expect((await contactByLabel(h, h.plans.kai, "Week 1")).contact.state).toBe("statusUnavailable");
   });
 });
+
+// Staff alert delivery: the sender's two new behaviours. A carrier "too many requests" stops the
+// run claiming more contacts (so a throttle does not become a string of missed caring messages),
+// and every completed run leaves a heartbeat the readiness probe reads.
+describe("the scheduled sender under carrier rate limiting", () => {
+  it("stops claiming for the rest of the run, leaving the other due contacts scheduled for the next run", async () => {
+    const h = await harness();
+    const week1 = await contactByLabel(h, h.plans.kai, "Week 1");
+    h.setNow(new Date(week1.planned.sendAt.getTime() + minutes(2)));
+    const throttled = createSimulatedTransport({
+      outcome: () => ({ outcome: "rejected", reason: "carrier-rate-limited" }),
+    });
+    const report = await runContactSender({
+      store: h.store,
+      transport: throttled,
+      clock: h.clock,
+      teamIds: [DEMO_TEAM_ID],
+    });
+
+    expect(report.carrierRateLimited).toBe(true);
+    // Exactly one send was attempted, however many contacts were due.
+    expect(throttled.records).toHaveLength(1);
+    const limited = report.outcomes.filter((outcome) => outcome.reason === "carrier-rate-limited");
+    expect(limited).toHaveLength(1);
+    expect(limited[0].outcome).toBe("notSentCarrierRefused");
+
+    const week1Ids = [week1.contact.id, (await contactByLabel(h, h.plans.tui, "Week 1")).contact.id];
+    const states = await Promise.all(
+      [h.plans.kai, h.plans.tui].map(async (plan) => (await contactByLabel(h, plan, "Week 1")).contact.state),
+    );
+    expect(states.filter((state) => state === "scheduled").length).toBeGreaterThanOrEqual(1);
+
+    // The next run, with the carrier answering again, sends what was left -- and never re-sends the
+    // one the carrier refused (it is recorded missed for a person to review).
+    const accepting = createSimulatedTransport();
+    await runContactSender({ store: h.store, transport: accepting, clock: h.clock, teamIds: [DEMO_TEAM_ID] });
+    expect(accepting.records.map((record) => record.reference)).not.toContain(limited[0].contactId);
+    for (const id of week1Ids) {
+      if (id === limited[0].contactId) continue;
+      const plan = id === week1.contact.id ? h.plans.kai : h.plans.tui;
+      expect((await contactByLabel(h, plan, "Week 1")).contact.state).toBe("delivered");
+    }
+  });
+});
+
+describe("the sender heartbeat", () => {
+  it("is recorded by every completed run: nothing due, and a stopped service", async () => {
+    const h = await harness();
+    const day1 = await contactByLabel(h, h.plans.kai, "Day 1");
+    h.setNow(new Date(day1.planned.sendAt.getTime() - minutes(30)));
+    expect(await h.store.getSenderHeartbeat({ actor: coordinator })).toBeNull();
+
+    const quiet = await runContactSender({
+      store: h.store,
+      transport: createSimulatedTransport(),
+      clock: h.clock,
+      teamIds: [DEMO_TEAM_ID],
+    });
+    expect(quiet.heartbeatRecorded).toBe(true);
+    expect((await h.store.getSenderHeartbeat({ actor: coordinator }))?.lastRunAt).toEqual(h.clock.now());
+
+    const stopped = await h.store.stopService(
+      { reason: "duplicate-send", note: "heartbeat test" },
+      { actor: coordinator, idempotencyKey: key("stop") },
+    );
+    expect(stopped.ok).toBe(true);
+    h.setNow(new Date(day1.planned.sendAt.getTime() - minutes(20)));
+    const halted = await runContactSender({
+      store: h.store,
+      transport: createSimulatedTransport(),
+      clock: h.clock,
+      teamIds: [DEMO_TEAM_ID],
+    });
+    expect(halted.serviceStopped).toBe(true);
+    expect(halted.heartbeatRecorded).toBe(true);
+    expect((await h.store.getSenderHeartbeat({ actor: coordinator }))?.lastRunAt).toEqual(h.clock.now());
+  });
+
+  it("is not recorded when the sender works for no team, or when the run fails outright", async () => {
+    const h = await harness();
+    const none = await runContactSender({
+      store: h.store,
+      transport: createSimulatedTransport(),
+      clock: h.clock,
+      teamIds: [],
+    });
+    expect(none.heartbeatRecorded).toBe(false);
+
+    const broken: CaringContactRepository = Object.create(h.store);
+    broken.getServiceState = async () => {
+      throw new Error("database unavailable");
+    };
+    await expect(
+      runContactSender({
+        store: broken,
+        transport: createSimulatedTransport(),
+        clock: h.clock,
+        teamIds: [DEMO_TEAM_ID],
+      }),
+    ).rejects.toThrow("database unavailable");
+    expect(await h.store.getSenderHeartbeat({ actor: coordinator })).toBeNull();
+  });
+
+  it("reports a refused heartbeat write without failing the run", async () => {
+    const h = await harness();
+    const refusing: CaringContactRepository = Object.create(h.store);
+    refusing.recordSenderHeartbeat = async () => {
+      throw new Error("heartbeat table missing");
+    };
+    const report = await runContactSender({
+      store: refusing,
+      transport: createSimulatedTransport(),
+      clock: h.clock,
+      teamIds: [DEMO_TEAM_ID],
+    });
+    expect(report.heartbeatRecorded).toBe(false);
+  });
+});

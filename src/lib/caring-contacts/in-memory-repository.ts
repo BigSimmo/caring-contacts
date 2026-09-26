@@ -79,6 +79,13 @@ import {
   admitPlanAssurances,
   contactIdentifierFor,
   isTerminalPlan,
+  mayReadTeamAlertOptIns,
+  mayWriteOperationalRecord,
+  unionOfAlertOptIns,
+  type SenderHeartbeat,
+  type StaffAlertClaim,
+  type StaffAlertClaimInput,
+  type StaffAlertReleaseInput,
   outcomeFor,
   replayRecordPlanId,
   type AccessTrailQuery,
@@ -295,6 +302,13 @@ export function createInMemoryRepository(clock: Clock, options: RepositoryOption
    * comparable evidence a clearance happened is the de-identified episode itself.
    */
   const retentionCleared = new Map<string, { terminalAt: Date; clearedAt: Date }>();
+
+  // Staff alerts and sender heartbeat (feature: staff alert delivery). The in-memory twins of
+  // migration 0020's two tables: one service-wide heartbeat instant, and the instant each
+  // (scope, alert class) alert was last delivered.
+  let senderLastRunAt: Date | null = null;
+  const staffAlertDeliveries = new Map<string, Date>();
+  const staffAlertKey = (scope: string, alertClass: string) => `${scope}::${alertClass}`;
 
   /**
    * The one service-wide safety-stop record (Ruling 3: never one per team). `reportedByTeamId` on
@@ -1602,6 +1616,58 @@ export function createInMemoryRepository(clock: Clock, options: RepositoryOption
           contactsDelivered: stored.contacts.filter((entry) => entry.contact.state === "delivered").length,
         },
       };
+    },
+
+    // ---------------------------------------------------------------------
+    // Staff alerts and sender heartbeat (feature: staff alert delivery)
+    // ---------------------------------------------------------------------
+
+    async listTeamAlertOptIns(context: ReadContext) {
+      if (!mayReadTeamAlertOptIns(context.actor)) return [];
+      const prefix = `${context.actor.teamId}::`;
+      const lists = [...notificationPreferences.entries()]
+        .filter(([key]) => key.startsWith(prefix))
+        .map(([, preferences]) => preferences.optedIn);
+      return unionOfAlertOptIns(lists);
+    },
+
+    async recordSenderHeartbeat(input: { at: Date }, context: ReadContext): Promise<TransitionResult<SenderHeartbeat>> {
+      if (!mayWriteOperationalRecord(context.actor)) {
+        return { ok: false, reason: REPOSITORY_REFUSALS.permissionDenied };
+      }
+      if (senderLastRunAt === null || input.at.getTime() > senderLastRunAt.getTime()) {
+        senderLastRunAt = new Date(input.at.getTime());
+      }
+      return { ok: true, value: { lastRunAt: new Date(senderLastRunAt.getTime()) } };
+    },
+
+    async getSenderHeartbeat() {
+      return senderLastRunAt === null ? null : { lastRunAt: new Date(senderLastRunAt.getTime()) };
+    },
+
+    async claimStaffAlert(
+      input: StaffAlertClaimInput,
+      context: ReadContext,
+    ): Promise<TransitionResult<StaffAlertClaim>> {
+      if (!mayWriteOperationalRecord(context.actor)) {
+        return { ok: false, reason: REPOSITORY_REFUSALS.permissionDenied };
+      }
+      const key = staffAlertKey(input.scope, input.alertClass);
+      const last = staffAlertDeliveries.get(key);
+      if (last !== undefined && last.getTime() > input.at.getTime() - input.cooldownMs) {
+        return { ok: true, value: "coolingDown" };
+      }
+      staffAlertDeliveries.set(key, new Date(input.at.getTime()));
+      return { ok: true, value: "claimed" };
+    },
+
+    async releaseStaffAlert(input: StaffAlertReleaseInput, context: ReadContext): Promise<TransitionResult<void>> {
+      if (!mayWriteOperationalRecord(context.actor)) {
+        return { ok: false, reason: REPOSITORY_REFUSALS.permissionDenied };
+      }
+      const key = staffAlertKey(input.scope, input.alertClass);
+      if (staffAlertDeliveries.get(key)?.getTime() === input.at.getTime()) staffAlertDeliveries.delete(key);
+      return { ok: true, value: undefined };
     },
   };
 }

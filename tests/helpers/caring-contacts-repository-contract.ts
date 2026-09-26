@@ -4430,5 +4430,195 @@ export function describeCaringContactRepositoryContract(label: string, factory: 
         expect(await store.listAccessTrail({ limit: 10, offset: 0 }, { actor: DISPATCHER_A })).toEqual([]);
       });
     });
+
+    // -------------------------------------------------------------------------
+    // Staff alerts and sender heartbeat (feature: staff alert delivery, migration 0020)
+    //
+    // Operational bookkeeping: software writes it, any actor may read the heartbeat, and the team
+    // opt-in read returns classes only. Written once here so both stores are held to the same
+    // answers -- including the cooldown arithmetic and the "never backwards" heartbeat.
+    // -------------------------------------------------------------------------
+    describe("staff alerts and sender heartbeat", () => {
+      const DISPATCHER_B: SystemActor = { ...DISPATCHER_A, teamId: teamId("TEAM-SOUTH") };
+      const at = (iso: string) => new Date(iso);
+
+      it("starts with no heartbeat, records one from the dispatcher and shows it to every team", async () => {
+        const store = await newStore();
+        expect(await store.getSenderHeartbeat({ actor: COORDINATOR_A })).toBeNull();
+
+        const recorded = unwrap(
+          await store.recordSenderHeartbeat({ at: at("2026-03-02T03:05:00.000Z") }, { actor: DISPATCHER_A }),
+        );
+        expect(recorded.lastRunAt.toISOString()).toBe("2026-03-02T03:05:00.000Z");
+
+        // Service-wide: a different team's session reads the same heartbeat.
+        expect((await store.getSenderHeartbeat({ actor: COORDINATOR_B }))?.lastRunAt.toISOString()).toBe(
+          "2026-03-02T03:05:00.000Z",
+        );
+        expect((await store.getSenderHeartbeat({ actor: DISPATCHER_B }))?.lastRunAt.toISOString()).toBe(
+          "2026-03-02T03:05:00.000Z",
+        );
+      });
+
+      it("never moves the heartbeat backwards when an overlapping run finishes earlier", async () => {
+        const store = await newStore();
+        unwrap(await store.recordSenderHeartbeat({ at: at("2026-03-02T03:10:00.000Z") }, { actor: DISPATCHER_A }));
+        const earlier = unwrap(
+          await store.recordSenderHeartbeat({ at: at("2026-03-02T03:05:00.000Z") }, { actor: DISPATCHER_A }),
+        );
+        expect(earlier.lastRunAt.toISOString()).toBe("2026-03-02T03:10:00.000Z");
+        unwrap(await store.recordSenderHeartbeat({ at: at("2026-03-02T03:15:00.000Z") }, { actor: DISPATCHER_B }));
+        expect((await store.getSenderHeartbeat({ actor: AUDITOR_A }))?.lastRunAt.toISOString()).toBe(
+          "2026-03-02T03:15:00.000Z",
+        );
+      });
+
+      it("refuses every operational write to a person, whatever their role", async () => {
+        const store = await newStore();
+        for (const person of [COORDINATOR_A, TEAM_LEAD_A, AUDITOR_A, ROLELESS_A]) {
+          expect(await store.recordSenderHeartbeat({ at: at(NOW) }, { actor: person })).toEqual({
+            ok: false,
+            reason: REPOSITORY_REFUSALS.permissionDenied,
+          });
+          expect(
+            await store.claimStaffAlert(
+              { scope: "TEAM-NORTH", alertClass: "permanentDeliveryFailure", at: at(NOW), cooldownMs: 60_000 },
+              { actor: person },
+            ),
+          ).toEqual({ ok: false, reason: REPOSITORY_REFUSALS.permissionDenied });
+          expect(
+            await store.releaseStaffAlert(
+              { scope: "TEAM-NORTH", alertClass: "permanentDeliveryFailure", at: at(NOW) },
+              { actor: person },
+            ),
+          ).toEqual({ ok: false, reason: REPOSITORY_REFUSALS.permissionDenied });
+        }
+        // Positive control: the refusals were about the actor, not a broken method.
+        expect(await store.getSenderHeartbeat({ actor: COORDINATOR_A })).toBeNull();
+        expect(unwrap(await store.recordSenderHeartbeat({ at: at(NOW) }, { actor: DISPATCHER_A })).lastRunAt).toEqual(
+          at(NOW),
+        );
+      });
+
+      it("answers the team's opted-in classes as a union, in ALERT_CLASSES order, and nothing about who", async () => {
+        const store = await newStore();
+        expect(await store.listTeamAlertOptIns({ actor: DISPATCHER_A })).toEqual([]);
+
+        unwrap(
+          await store.saveNotificationPreferences(
+            { actorId: COORDINATOR_A.id, optedIn: ["exceptionBacklog", "permanentDeliveryFailure"] },
+            writeContext(COORDINATOR_A, "alerts-optin-1"),
+          ),
+        );
+        unwrap(
+          await store.saveNotificationPreferences(
+            { actorId: TEAM_LEAD_A.id, optedIn: ["permanentDeliveryFailure", "serviceSafetyStop"] },
+            writeContext(TEAM_LEAD_A, "alerts-optin-2"),
+          ),
+        );
+        // Another team's opt-in must not leak into this team's answer.
+        unwrap(
+          await store.saveNotificationPreferences(
+            { actorId: COORDINATOR_B.id, optedIn: ["pathwayRetired"] },
+            writeContext(COORDINATOR_B, "alerts-optin-3"),
+          ),
+        );
+
+        const expected = ["permanentDeliveryFailure", "serviceSafetyStop", "exceptionBacklog"];
+        expect(await store.listTeamAlertOptIns({ actor: DISPATCHER_A })).toEqual(expected);
+        expect(await store.listTeamAlertOptIns({ actor: COORDINATOR_A })).toEqual(expected);
+        expect(await store.listTeamAlertOptIns({ actor: DISPATCHER_B })).toEqual(["pathwayRetired"]);
+        // Deny-by-default: a person with no roles learns nothing.
+        expect(await store.listTeamAlertOptIns({ actor: ROLELESS_A })).toEqual([]);
+      });
+
+      it("claims an alert once per cooldown per scope and class, and again once the cooldown has passed", async () => {
+        const store = await newStore();
+        const claim = (scope: string, alertClass: "senderStalled" | "carrierRateLimited", iso: string) =>
+          store.claimStaffAlert(
+            { scope, alertClass, at: at(iso), cooldownMs: 60 * 60 * 1000 },
+            { actor: DISPATCHER_A },
+          );
+
+        expect(unwrap(await claim("service", "senderStalled", "2026-03-02T03:00:00.000Z"))).toBe("claimed");
+        expect(unwrap(await claim("service", "senderStalled", "2026-03-02T03:05:00.000Z"))).toBe("coolingDown");
+        expect(unwrap(await claim("service", "senderStalled", "2026-03-02T03:59:59.000Z"))).toBe("coolingDown");
+        // A different class, and a different scope, are independent.
+        expect(unwrap(await claim("service", "carrierRateLimited", "2026-03-02T03:05:00.000Z"))).toBe("claimed");
+        expect(unwrap(await claim("TEAM-NORTH", "senderStalled", "2026-03-02T03:05:00.000Z"))).toBe("claimed");
+        // Exactly one cooldown later it may go again -- and the new claim restarts the cooldown.
+        expect(unwrap(await claim("service", "senderStalled", "2026-03-02T04:00:00.000Z"))).toBe("claimed");
+        expect(unwrap(await claim("service", "senderStalled", "2026-03-02T04:30:00.000Z"))).toBe("coolingDown");
+        // Service-wide: another team's dispatcher sees the same claim.
+        expect(
+          unwrap(
+            await store.claimStaffAlert(
+              {
+                scope: "service",
+                alertClass: "senderStalled",
+                at: at("2026-03-02T04:30:00.000Z"),
+                cooldownMs: 3_600_000,
+              },
+              { actor: DISPATCHER_B },
+            ),
+          ),
+        ).toBe("coolingDown");
+      });
+
+      it("lets exactly one of two simultaneous claims win", async () => {
+        const store = await newStore();
+        const input = {
+          scope: "TEAM-NORTH",
+          alertClass: "permanentDeliveryFailure" as const,
+          at: at("2026-03-02T03:00:00.000Z"),
+          cooldownMs: 3_600_000,
+        };
+        const results = await Promise.all([
+          store.claimStaffAlert(input, { actor: DISPATCHER_A }),
+          store.claimStaffAlert(input, { actor: DISPATCHER_A }),
+        ]);
+        expect(results.map((result) => unwrap(result)).sort()).toEqual(["claimed", "coolingDown"]);
+      });
+
+      it("gives a failed delivery's claim back, and only that claim", async () => {
+        const store = await newStore();
+        const base = { scope: "service", alertClass: "carrierRateLimited" as const, cooldownMs: 3_600_000 };
+        expect(
+          unwrap(await store.claimStaffAlert({ ...base, at: at("2026-03-02T03:00:00.000Z") }, { actor: DISPATCHER_A })),
+        ).toBe("claimed");
+        // Releasing a claim made at a DIFFERENT instant leaves the real one standing.
+        unwrap(
+          await store.releaseStaffAlert(
+            { scope: base.scope, alertClass: base.alertClass, at: at("2026-03-02T02:00:00.000Z") },
+            { actor: DISPATCHER_A },
+          ),
+        );
+        expect(
+          unwrap(await store.claimStaffAlert({ ...base, at: at("2026-03-02T03:01:00.000Z") }, { actor: DISPATCHER_A })),
+        ).toBe("coolingDown");
+        unwrap(
+          await store.releaseStaffAlert(
+            { scope: base.scope, alertClass: base.alertClass, at: at("2026-03-02T03:00:00.000Z") },
+            { actor: DISPATCHER_A },
+          ),
+        );
+        expect(
+          unwrap(await store.claimStaffAlert({ ...base, at: at("2026-03-02T03:02:00.000Z") }, { actor: DISPATCHER_A })),
+        ).toBe("claimed");
+      });
+
+      it("writes no audit event for heartbeat or alert bookkeeping", async () => {
+        const store = await newStore();
+        const before = (await auditTrail(store)).length;
+        unwrap(await store.recordSenderHeartbeat({ at: at(NOW) }, { actor: DISPATCHER_A }));
+        unwrap(
+          await store.claimStaffAlert(
+            { scope: "service", alertClass: "senderStalled", at: at(NOW), cooldownMs: 60_000 },
+            { actor: DISPATCHER_A },
+          ),
+        );
+        expect((await auditTrail(store)).length).toBe(before);
+      });
+    });
   });
 }

@@ -35,7 +35,12 @@
 //   * whether Telstra signs its callbacks. Nothing documented was found, so the address signature
 //     remains the only proof a receipt is genuine;
 //   * the success status code for a send (any 2xx is treated as accepted), rate limits, and the
-//     error-body format. A 429 is treated like any other 4xx: refused, not sent, not retried;
+//     error-body format. A 429 ("too many requests") is refused, not sent and not retried, like any
+//     other 4xx -- but under its OWN reason code, `carrier-rate-limited`, because it means the
+//     carrier is throttling this service rather than refusing this one message. The sender stops
+//     claiming further contacts for the rest of that run and raises the operational
+//     "carrier rate limiting" staff alert (../alerts/). Telstra's documented limits and whether it
+//     sends Retry-After were not readable; Retry-After is ignored;
 //   * the newest SDK (4.0.2) no longer sends Telstra-api-version at all; 3.0.10 sent "3.x". It is
 //     kept because the API definition lists it as a request header;
 //   * where Telstra stores and processes messages. The docs do not say; the owner must get written
@@ -61,6 +66,13 @@ export const TELSTRA_DEFAULT_API_BASE_URL = "https://products.api.telstra.com";
  * configuration tweak.
  */
 export const AUSTRALIAN_SMS_API_HOSTS: readonly string[] = Object.freeze(["products.api.telstra.com"]);
+
+/**
+ * The reason code for an HTTP 429 from either the token or the message endpoint. Distinct from
+ * `carrier-refused-<status>` on purpose: a 429 says nothing about the message and everything about
+ * the carrier throttling this service, so the sender treats it as a service-level condition.
+ */
+export const CARRIER_RATE_LIMITED_REASON = "carrier-rate-limited";
 
 /** Scope requested with the token: only the message scopes, of those Telstra documents. */
 export const TELSTRA_TOKEN_SCOPE = "messages:read messages:write";
@@ -157,8 +169,10 @@ export function createTelstraTransport(
 
   let cachedToken: { value: string; expiresAt: number } | null = null;
 
-  async function accessToken(): Promise<string | null> {
-    if (cachedToken && cachedToken.expiresAt - TOKEN_EXPIRY_MARGIN_MS > now()) return cachedToken.value;
+  /** The access token, or the reason code for why none could be had. */
+  async function accessToken(): Promise<{ token: string } | { failure: string }> {
+    const failed = { failure: "carrier-authentication-failed" };
+    if (cachedToken && cachedToken.expiresAt - TOKEN_EXPIRY_MARGIN_MS > now()) return { token: cachedToken.value };
     cachedToken = null;
     let response: Response;
     try {
@@ -175,27 +189,29 @@ export function createTelstraTransport(
         redirect: "error",
       });
     } catch {
-      return null;
+      return failed;
     }
-    if (!response.ok) return null;
+    if (response.status === 429) return { failure: CARRIER_RATE_LIMITED_REASON };
+    if (!response.ok) return failed;
     const payload = (await response.json().catch(() => null)) as {
       access_token?: unknown;
       expires_in?: unknown;
     } | null;
-    if (!payload || typeof payload.access_token !== "string" || payload.access_token === "") return null;
+    if (!payload || typeof payload.access_token !== "string" || payload.access_token === "") return failed;
     const expiresInSeconds = Number(payload.expires_in);
     const lifetimeMs = Number.isFinite(expiresInSeconds) && expiresInSeconds > 0 ? expiresInSeconds * 1000 : 0;
     cachedToken = { value: payload.access_token, expiresAt: now() + lifetimeMs };
-    return payload.access_token;
+    return { token: payload.access_token };
   }
 
   return {
     kind: "telstra",
     reachesRealPhones: true,
     async send(message: OutboundTextMessage): Promise<TextMessageSendResult> {
-      const token = await accessToken();
+      const signedIn = await accessToken();
       // No token means no message request was ever made, so nothing can have reached the patient.
-      if (token === null) return { outcome: "rejected", reason: "carrier-authentication-failed" };
+      if ("failure" in signedIn) return { outcome: "rejected", reason: signedIn.failure };
+      const token = signedIn.token;
 
       const body: Record<string, unknown> = {
         to: message.to,
@@ -236,6 +252,10 @@ export function createTelstraTransport(
       if (response.status === 401 || response.status === 403) {
         cachedToken = null;
         return { outcome: "rejected", reason: `carrier-refused-${response.status}` };
+      }
+      if (response.status === 429) {
+        // Throttled: the carrier did not take the message. Not re-sent here or by the sender.
+        return { outcome: "rejected", reason: CARRIER_RATE_LIMITED_REASON };
       }
       if (response.status >= 400 && response.status < 500) {
         return { outcome: "rejected", reason: `carrier-refused-${response.status}` };
