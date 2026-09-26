@@ -57,6 +57,8 @@ const PATIENT_BEARING_TABLES: readonly string[] = Object.freeze([
   // at one patient's plan, and an attestation readable across teams would say who a team is
   // contacting.
   "plan_assurances",
+  // Incoming text messages (2026-09-26): a patient's own words, filed on their plan.
+  "inbound_replies",
 ]);
 
 let pool: Pool;
@@ -120,6 +122,8 @@ describe("caring-contact migrations", () => {
       "notification_preferences",
       "training_records",
       "service_restart_approvals",
+      "inbound_replies",
+      "inbound_auto_reply_limits",
     ]) {
       expect(tables).toContain(expected);
     }
@@ -419,6 +423,8 @@ describe("caring-contact migrations", () => {
     // And the replay payload, which is the one nobody would look for: it is not FOR patient data and
     // holds it anyway, verbatim, for every write.
     expect(await describeColumn("idempotency_records", "result")).toContain("Treat it as patient data");
+    // Migration 0021: the words a patient texts back.
+    expect(await describeColumn("inbound_replies", "body")).toContain("Treat it as patient data");
 
     // The positive control for those three: a column that is NOT patient data carries a comment
     // that does not say so. Without it, a `col_description` that returned the same string for every
@@ -1809,5 +1815,142 @@ describe("the workspace schema", () => {
         ),
       ).rejects.toThrow(/foreign key constraint/i);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Incoming text messages (2026-09-26): migration 0021.
+// ---------------------------------------------------------------------------
+describe("incoming replies (migration 0021)", () => {
+  const SENDER_KEY = "A".repeat(43);
+
+  async function insertReply(
+    teamId: string,
+    planId: string,
+    options: { id?: string; kind?: string; body?: string; planPaused?: boolean; audited?: boolean } = {},
+  ): Promise<void> {
+    const id = options.id ?? `reply-${planId.replace(/[^A-Za-z0-9]/g, "")}0000`;
+    await runInTeamSession(pool, { teamId, auditToken: nextAuditToken() }, async (client) => {
+      if (options.audited !== false) {
+        await insertAuditEvent(client, {
+          teamId,
+          actorId: "system-inbound-reply-recorder",
+          actorRoles: ["system:inboundReplyRecorder"],
+          action: `recordInboundReply:${options.kind ?? "reply"}`,
+          objectType: "inboundReply",
+          objectId: id,
+          outcome: "allowed",
+          idempotencyKey: `inbound-${id}`,
+        });
+      }
+      await client.query(
+        `insert into caring_contacts.inbound_replies (id, team_id, plan_id, kind, body, received_at, plan_paused)
+         values ($1, $2, $3, $4, $5, now(), $6)`,
+        [
+          id,
+          teamId,
+          planId,
+          options.kind ?? "reply",
+          options.body ?? "Synthetic reply text.",
+          options.planPaused ?? false,
+        ],
+      );
+    });
+  }
+
+  beforeEach(async () => {
+    await seedPlan(pool, { teamId: TEAM_NORTH, planId: "PLAN-N", patientId: "PATIENT-N" });
+    await seedPlan(pool, { teamId: TEAM_SOUTH, planId: "PLAN-S", patientId: "PATIENT-S" });
+  });
+
+  it("shows a team its own replies and returns ZERO ROWS to another team", async () => {
+    await insertReply(TEAM_NORTH, "PLAN-N");
+    const own = await runInTeamSession(
+      pool,
+      { teamId: TEAM_NORTH },
+      async (client) => (await client.query<{ id: string }>("select id from caring_contacts.inbound_replies")).rows,
+    );
+    expect(own.map((row) => row.id)).toEqual(["reply-PLANN0000"]);
+
+    const other = await runInTeamSession(
+      pool,
+      { teamId: TEAM_SOUTH },
+      async (client) => (await client.query("select id, body from caring_contacts.inbound_replies")).rows,
+    );
+    expect(other).toEqual([]);
+  });
+
+  it("refuses a reply claiming one team against another team's plan", async () => {
+    await expect(insertReply(TEAM_SOUTH, "PLAN-N")).rejects.toThrow(/foreign key constraint/i);
+  });
+
+  it("refuses a reply written with no audit event in the same transaction", async () => {
+    await expect(insertReply(TEAM_NORTH, "PLAN-N", { audited: false })).rejects.toThrow(
+      /caring-contacts-audit-required/,
+    );
+    const { rows } = await pool.query<{ count: string }>(
+      "select count(*)::text as count from caring_contacts.inbound_replies",
+    );
+    expect(Number(rows[0].count)).toBe(0);
+  });
+
+  it("holds the domain's shape: known kinds, a bounded body, and only an opt-out pausing", async () => {
+    await expect(insertReply(TEAM_NORTH, "PLAN-N", { kind: "unsubscribe" })).rejects.toThrow(/check constraint/i);
+    await expect(insertReply(TEAM_NORTH, "PLAN-N", { body: "x".repeat(2001) })).rejects.toThrow(/check constraint/i);
+    await expect(insertReply(TEAM_NORTH, "PLAN-N", { kind: "reply", planPaused: true })).rejects.toThrow(
+      /check constraint/i,
+    );
+    await expect(insertReply(TEAM_NORTH, "PLAN-N", { id: "0412345678" })).rejects.toThrow();
+    // Positive control: a well-formed opt-out that paused its plan is accepted.
+    await insertReply(TEAM_NORTH, "PLAN-N", { kind: "optOutRequest", planPaused: true });
+  });
+
+  it("denies an anonymous session the replies and the loop guard", async () => {
+    await insertReply(TEAM_NORTH, "PLAN-N");
+    const readable = await runInTeamSession(pool, { teamId: TEAM_NORTH, role: ANON_ROLE }, async (client) => ({
+      replies: (await client.query("select id from caring_contacts.inbound_replies")).rows,
+      limits: (await client.query("select sender_key from caring_contacts.inbound_auto_reply_limits")).rows,
+    }));
+    expect(readable).toEqual({ replies: [], limits: [] });
+  });
+
+  it("keeps the loop guard service-wide: any team-scoped session, never an unscoped one", async () => {
+    await runInTeamSession(pool, { teamId: "inbound-auto-reply-limit" }, (client) =>
+      client.query(
+        "insert into caring_contacts.inbound_auto_reply_limits (sender_key, last_replied_at) values ($1, now())",
+        [SENDER_KEY],
+      ),
+    );
+    const scoped = await runInTeamSession(
+      pool,
+      { teamId: TEAM_SOUTH },
+      async (client) => (await client.query("select sender_key from caring_contacts.inbound_auto_reply_limits")).rows,
+    );
+    expect(scoped).toHaveLength(1);
+    const unscoped = await runInTeamSession(
+      pool,
+      { teamId: null },
+      async (client) => (await client.query("select sender_key from caring_contacts.inbound_auto_reply_limits")).rows,
+    );
+    expect(unscoped).toEqual([]);
+  });
+
+  it("refuses a loop-guard key that could be a phone number", async () => {
+    await expect(
+      runInTeamSession(pool, { teamId: TEAM_NORTH }, (client) =>
+        client.query(
+          "insert into caring_contacts.inbound_auto_reply_limits (sender_key, last_replied_at) values ($1, now())",
+          ["+61491570156"],
+        ),
+      ),
+    ).rejects.toThrow(/check constraint/i);
+  });
+
+  it("removes a plan's replies with the plan, through the composite key", async () => {
+    await insertReply(TEAM_NORTH, "PLAN-N");
+    const { rows } = await pool.query<{ confdeltype: string }>(
+      `select confdeltype from pg_constraint where conname = 'inbound_replies_team_plan_fk'`,
+    );
+    expect(rows.map((row) => row.confdeltype)).toEqual(["c"]);
   });
 });

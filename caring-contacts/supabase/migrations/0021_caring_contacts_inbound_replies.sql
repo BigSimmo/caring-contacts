@@ -63,7 +63,7 @@ create index if not exists inbound_replies_open_idx
   where followed_up_at is null;
 
 comment on column caring_contacts.inbound_replies.body is
-  'The words a patient texted back. Patient content: readable only by roles that may read the patient''s record, cleared by markRetentionCleared, never selected by the team-wide list read.';
+  'The words a patient texted back. Treat it as patient data: readable only by roles that may read the patient''s record, cleared by markRetentionCleared, never selected by the team-wide list read.';
 
 create table if not exists caring_contacts.inbound_auto_reply_limits (
   sender_key text primary key,
@@ -73,12 +73,18 @@ create table if not exists caring_contacts.inbound_auto_reply_limits (
 );
 
 -- ---------------------------------------------------------------------------
--- Privileges. 0002's grants are a snapshot of the tables that existed when it ran; re-granted here
--- for the same reason 0003 re-grants -- and `caring_contacts_anon` keeps SELECT with no policy, so
--- the anonymous denial is row-level security's doing rather than a missing GRANT.
+-- Privileges, granted on THESE TWO TABLES BY NAME. Never `on all tables in schema`: re-issuing that
+-- here would hand `caring_contacts_app` back the UPDATE and DELETE on `audit_events` that 0004
+-- revoked (the migration suite's audit-immutability cases fail if it does).
+--   * inbound_replies: no DELETE -- a reply is never removed by the application, only its words
+--     cleared by `markRetentionCleared`; the composite key's cascade runs with the owner's rights.
+--   * inbound_auto_reply_limits: DELETE, because each claim purges expired windows.
+-- `caring_contacts_anon` keeps SELECT with no policy, as on every other table, so the anonymous
+-- denial is row-level security's doing rather than a missing GRANT.
 -- ---------------------------------------------------------------------------
-grant select, insert, update, delete on all tables in schema caring_contacts to caring_contacts_app;
-grant select on all tables in schema caring_contacts to caring_contacts_anon;
+grant select, insert, update on caring_contacts.inbound_replies to caring_contacts_app;
+grant select, insert, update, delete on caring_contacts.inbound_auto_reply_limits to caring_contacts_app;
+grant select on caring_contacts.inbound_replies, caring_contacts.inbound_auto_reply_limits to caring_contacts_anon;
 
 -- ---------------------------------------------------------------------------
 -- Row-level security

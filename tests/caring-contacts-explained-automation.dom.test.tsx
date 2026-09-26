@@ -366,6 +366,13 @@ const ALLOWED_CLIENT_COMPONENTS = [
   // importing the domain's, so its module graph never reaches the repository; the companion test
   // below proves that graph never names the service-state module or type.
   "team-claim-list.tsx",
+  // Incoming text messages (2026-09-26): the "Mark followed up" button on a patient's reply. A
+  // click that performs a write is a client capability by definition. Added on the same three
+  // conditions as every entry above: its props are a plan id, a reply id and a version number --
+  // no state object, nothing derived from the record, and not even the reply's own words, which
+  // the Server Component beside it renders; the companion test below proves its module graph
+  // never names the service-state module or type; and it is here deliberately.
+  "inbound-reply-follow-up-button.tsx",
 ];
 
 /**
