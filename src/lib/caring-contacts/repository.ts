@@ -78,6 +78,13 @@ import type {
 import type { TrainingCompetency, TrainingRecord } from "./training";
 import type { Episode, EpisodeState } from "./episode";
 import type { PlannedContact } from "./schedule";
+import type {
+  FollowUpInboundReplyInput,
+  InboundReplyPlanMatch,
+  InboundReplyRecord,
+  InboundReplyWithText,
+  RecordInboundReplyInput,
+} from "./inbound-replies";
 
 /**
  * Episode reconciliation (carried finding from Task 8).
@@ -344,6 +351,14 @@ export const READ_ACTIONS = Object.freeze({
    * "there are none" alike -- and it now asks it through this entry rather than through a fourth.
    */
   dispatch: "reconcileProviderDispatch",
+  /**
+   * Incoming text messages (2026-09-26): a patient's reply, and the "reply to check" items built
+   * from replies. The EPISODE's capability, not the plan's, because a reply is the patient's own
+   * words -- the same class of content `getEpisode` releases -- so exactly the roles that may read
+   * the patient's record may read it. The number match (`findPlansForInboundNumber`) is held to it
+   * too: it reads the stored mobile numbers.
+   */
+  inboundReply: "generateClinicalRecordSummary",
 } as const satisfies Record<string, CaringContactAction>);
 
 /** Either governance action reading a pathway version's content is granted by. Same rule, same reason. */
@@ -480,6 +495,15 @@ export const CLEARED_PATIENT_DETAIL: StoredPatientDetail = Object.freeze({
 export const CLEARED_PATIENT_FREE_TEXT = Object.freeze({
   reassignmentReason: "",
   dispatchDiscrepancyNote: "",
+  /**
+   * Incoming text messages (2026-09-26): the words of every reply filed against the plan,
+   * `inbound_replies.body`. The patient's own words, so a clearance removes them with the rest of
+   * the patient detail. `''` rather than null, for `reassignmentReason`'s reason: the column is
+   * `not null`, and a stored reply is never blank (`admitInboundReplyText` refuses one), so `''`
+   * can only have been written by a clearance. The item itself stays -- that a reply arrived, what
+   * kind, when, and who followed it up -- the same no-patient-content class an audit event keeps.
+   */
+  inboundReplyText: "",
 });
 
 /**
@@ -832,6 +856,13 @@ export type DispatchRecord = {
  */
 export const DISPATCH_RECORD_HOLDS_NO_DISCREPANCY_NOTE: LacksKey<DispatchRecord, "discrepancyNote"> = true;
 
+/**
+ * Incoming text messages (2026-09-26). Pins `InboundReplyRecord` -- what both reply writes return,
+ * and therefore what their replay records hold, and what the team-wide list read releases -- as
+ * carrying none of the patient's words. The words are released by `listInboundReplies` alone.
+ */
+export const INBOUND_REPLY_RECORD_HOLDS_NO_TEXT: LacksKey<InboundReplyRecord, "text"> = true;
+
 export type DispatchDiscrepancyResolution = "confirmedDelivered" | "confirmedNotDelivered" | "unresolvedNoResend";
 export type ResolveDiscrepancyInput = {
   contactId: ContactId;
@@ -1030,6 +1061,61 @@ export interface CaringContactRepository {
   listSendableContacts(planId: PlanId, context: ReadContext): Promise<StoredContact[]>;
   listAuditEvents(context: ReadContext): Promise<AuditEvent[]>;
   getEpisode(planId: PlanId, context: ReadContext): Promise<Episode | null>;
+
+  // -------------------------------------------------------------------------------------------
+  // Incoming text messages (2026-09-26). The rules live in ./inbound-replies; see that module.
+  // -------------------------------------------------------------------------------------------
+
+  /**
+   * The plans in the ACTOR'S OWN TEAM whose stored mobile number is this Australian mobile
+   * (`+614XXXXXXXX`), compared after normalising the stored value the way the sender does
+   * (`toAustralianMobileE164`). Releases identifiers and state only, never the number or a name.
+   * Empty for an actor without `READ_ACTIONS.inboundReply`, and for another team's plans, exactly
+   * as `listPlans` is -- so one team's match can never see, or be filed on, another team's plan.
+   * A cleared plan holds no number and so never matches.
+   */
+  findPlansForInboundNumber(mobileE164: string, context: ReadContext): Promise<InboundReplyPlanMatch[]>;
+  /**
+   * Records one incoming message as a "reply to check" on one plan and, when it is an opt-out on an
+   * ACTIVE plan, pauses that plan in the same atomic write (`optOutPausesPlan`). Never withdraws,
+   * cancels or resumes anything. Gated on `recordInboundReply`, which only the
+   * `inboundReplyRecorder` system role holds.
+   *
+   * NO EXPECTED PLAN VERSION, deliberately, and the one write here without one. The pause is the
+   * conservative direction and is applied to the plan as it stands under a row lock: if it is no
+   * longer active (someone paused, withdrew or ended it meanwhile) the pause simply does not
+   * happen and the item still records what was asked. There is no lost update to guard against,
+   * and a stale-version refusal would be REMEMBERED under the carrier's retry key -- so a genuine
+   * STOP could be refused for ever.
+   *
+   * NOT BLOCKED BY THE SERVICE SAFETY STOP, like `recordHospitalStatusEvent`: a patient's reply --
+   * above all an opt-out -- must be recordable during an incident, and a pause only ever reduces
+   * what is sent.
+   */
+  recordInboundReply(
+    input: RecordInboundReplyInput,
+    context: WriteContext,
+  ): Promise<TransitionResult<InboundReplyRecord>>;
+  /** A person marks a reply followed up. Gated on `followUpInboundReply`; once only; versioned. */
+  markInboundReplyFollowedUp(
+    input: FollowUpInboundReplyInput,
+    context: WriteContext,
+  ): Promise<TransitionResult<InboundReplyRecord>>;
+  /** The team's replies nobody has followed up yet, oldest first, WITHOUT the words. */
+  listOpenInboundReplies(context: ReadContext): Promise<InboundReplyRecord[]>;
+  /** Every reply filed against one plan, oldest first, WITH the words. The patient screen's read. */
+  listInboundReplies(planId: PlanId, context: ReadContext): Promise<InboundReplyWithText[]>;
+  /**
+   * The automatic-reply loop guard: true, and the window restarted, when `senderKey` has not been
+   * answered within `windowMs` of the store's clock; false otherwise. Atomic across concurrent
+   * callers and across instances sharing the store. Entries older than the window are deleted on
+   * every call, so nothing about a number outlives the window it exists for.
+   *
+   * No actor and no audit event, like `recordAccess`: it is keyed by a hash that names nobody
+   * (`inboundSenderKey`), belongs to no team (an unknown number has none), and changes nothing about
+   * any patient. It is not blocked by the service safety stop.
+   */
+  claimInboundAutoReply(input: { senderKey: string; windowMs: number }): Promise<boolean>;
 }
 
 /**

@@ -337,3 +337,65 @@ export function renderGovernedMessage(input: RenderGovernedMessageInput): Patien
   }
   return validate(template.split(PREFERRED_NAME_PLACEHOLDER).join(name));
 }
+
+// ---------------------------------------------------------------------------------------------
+// Incoming text messages: the automatic reply (added 2026-09-26, owner request)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The fixed text sent back to ANYONE who texts this service's number -- a known patient, a number
+ * this service has never held, or another automatic responder. Sent by the inbound webhook
+ * (`./inbound-receiver.ts`) through the configured message transport, at most once per sending
+ * number per `INBOUND_AUTO_REPLY_WINDOW_MS` (see `./inbound-replies.ts`).
+ *
+ * PROVISIONAL — NOT CLINICALLY APPROVED. NEEDS CLINICAL SIGN-OFF BEFORE ANY REAL-PATIENT USE. The
+ * owner asked for "this number isn't monitored, call 000, Lifeline or the Mental Health Emergency
+ * Response Line"; the sentence below is an implementer's draft of that request, listed for the
+ * approval gate in docs/caring-contacts/message-review-pack.md ("Message C"). This is the ONE place
+ * it lives: nothing else in `src/` retypes it, and a reword happens here or nowhere.
+ *
+ * WHY IT IS NOT `AUTOMATED_REPLY_RESPONSE` ABOVE. That specimen (review pack "Message B") is still
+ * what the Templates screen and the prototypes show, and it could not be sent as it stands, for two
+ * reasons that are facts rather than taste:
+ *   * it names this prototype's reserved FICTIONAL staffed line, which connects to nobody -- the
+ *     governed-message check refuses it for any transport that can reach a real phone;
+ *   * it says "No one at Example Aftercare Team reads this number", and since this change a reply
+ *     from a known patient IS shown to the team as a "reply to check" so a person can follow it up.
+ *     That sentence is no longer true, and neither is `PATIENT_VISIBLE_NO_REPLY_NOTICE` ("No one reads
+ *     replies to this number") inside the scheduled message. Both are governed wording this change
+ *     does not reword; the review pack records the conflict for the approval gate to decide.
+ * This text therefore claims only that the number is not MONITORED -- nobody is watching it, so a
+ * reply may not be seen for some time -- which stays true whether or not a person later reads it.
+ *
+ * WHAT IS IN IT, AND WHY IT FITS ONE SMS. Exactly 160 GSM-7 characters, one segment (checked below
+ * at load time, so a reword that spills into a second segment stops the build). Every number is a
+ * real public service taken from the canonical record, docs/caring-contacts-crisis-lines.md: 000,
+ * Lifeline 13 11 14 (the same number as the owner's own crisis-support sentence), and the Mental
+ * Health Emergency Response Line for Perth metro (1300 555 788) and Peel (1800 676 822).
+ * tests/caring-contacts-inbound-replies.test.ts fails if any of them stops matching that record.
+ * 13YARN and Rurallink are NOT in it: there was no room inside one segment, and which services a
+ * one-segment reply names is a question for the approval gate, recorded in the review pack.
+ *
+ * IT MAKES NO PROMISE THE SYSTEM MIGHT NOT KEEP. The same wording goes to a STOP request as to any
+ * other text. It does not say "your messages are paused" (a pause can fail, and an unknown number
+ * has no plan to pause) or "someone will call you" (a follow-up is a person's decision). It asks no
+ * question, so it does not invite a reply on a channel nobody watches (hazard H-C11).
+ */
+export const INBOUND_AUTO_REPLY_MESSAGE =
+  "This number isn't monitored. For help now call 000, Lifeline 13 11 14, or the Mental Health Emergency Response Line 1300 555 788 (Perth) or 1800 676 822 (Peel).";
+
+export const INBOUND_AUTO_REPLY_GSM7: Gsm7Evidence = calculateGsm7(INBOUND_AUTO_REPLY_MESSAGE);
+
+// Load-time, and thrown rather than asserted in a test, for the reason `model.ts` checks its state
+// classifications at load: a build whose automatic reply would be refused, or would cost two SMS,
+// must not start.
+{
+  const checked = validateGovernedMessage({
+    text: INBOUND_AUTO_REPLY_MESSAGE,
+    messageType: "standard",
+    syntheticFictionalContactsAcknowledged: false,
+  });
+  if (!checked.valid || !INBOUND_AUTO_REPLY_GSM7.valid || INBOUND_AUTO_REPLY_GSM7.segments !== 1) {
+    throw new Error("caring-contacts message copy: the inbound automatic reply is not a valid one-segment message");
+  }
+}
