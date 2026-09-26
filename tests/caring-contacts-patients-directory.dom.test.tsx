@@ -73,6 +73,7 @@ function planRecord(options: { id: string; state: PlanState; contacts?: readonly
     completedAt: null,
     outcome: "inProgress",
     assuranceAttestations: [],
+    mobileCheck: { state: "notChecked", sentAt: null, resolvedAt: null },
     contacts: options.contacts ?? [contact(1), contact(2)],
   };
 }

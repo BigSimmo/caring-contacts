@@ -30,6 +30,8 @@ import {
   type CaringContactRepository,
   type ContactProviderStatusInput,
   type ContactStatusInput,
+  type ContactDetailInput,
+  type ContactDetailOutcome,
   type CreatePlanInput,
   type CreateReferralInput,
   type DispatchRecord,
@@ -44,7 +46,9 @@ import {
   type ReferralTransitionInput,
   type RepositoryOptions,
   type ResolveDiscrepancyInput,
+  type ResolveMobileCheckInput,
   type SavePathwayVersionInput,
+  type SharedMobileQuery,
   type StoredContact,
   type WithdrawPlanInput,
   type WriteContext,
@@ -84,10 +88,11 @@ export type { SqlConnection, SqlConnectionPool, SqlResult, SqlRow, SqlValue };
 
 export const PLAN_COLUMNS = `id, team_id, patient_id, referral_id, pathway_version_id, state, version, outcome,
   discharge_at, created_at, completed_at, sending_preference, patient_name, patient_mobile_number,
-  patient_identifiers`;
+  patient_identifiers, mobile_check_state, mobile_check_sent_at, mobile_check_resolved_at`;
 
 export const PLAN_LIST_COLUMNS = `id, team_id, patient_id, referral_id, pathway_version_id, state, version,
-  outcome, discharge_at, created_at, completed_at, sending_preference`;
+  outcome, discharge_at, created_at, completed_at, sending_preference, mobile_check_state, mobile_check_sent_at,
+  mobile_check_resolved_at`;
 
 // Query string pinned by tests/caring-contacts-domain-isolation.test.ts:
 // select ${PLAN_LIST_COLUMNS} from caring_contacts.plans order by id
@@ -181,7 +186,7 @@ function createPostgresRepositoryContext(
           actorId: actor.id,
           actorRoles: actorRoleNames(actor),
           teamId: actor.teamId,
-          action: spec.auditAction,
+          action: staged.ok && spec.auditActionFor ? spec.auditActionFor(staged.value) : spec.auditAction,
           objectType: spec.objectType ?? "plan",
           objectId: spec.objectId,
           outcome,
@@ -318,6 +323,25 @@ export class PostgresCaringContactsRepository implements CaringContactRepository
     context: WriteContext,
   ): Promise<TransitionResult<HospitalStatusOutcome>> {
     return this.plansStore.recordHospitalStatusEvent(input, context);
+  }
+
+  updatePatientContactDetail(
+    input: ContactDetailInput,
+    context: WriteContext,
+  ): Promise<TransitionResult<ContactDetailOutcome>> {
+    return this.plansStore.updatePatientContactDetail(input, context);
+  }
+
+  recordMobileCheckSent(input: PlanLifecycleInput, context: WriteContext): Promise<TransitionResult<PlanRecord>> {
+    return this.plansStore.recordMobileCheckSent(input, context);
+  }
+
+  resolveMobileCheck(input: ResolveMobileCheckInput, context: WriteContext): Promise<TransitionResult<PlanRecord>> {
+    return this.plansStore.resolveMobileCheck(input, context);
+  }
+
+  countPlansSharingMobile(input: SharedMobileQuery, context: ReadContext): Promise<number> {
+    return this.plansStore.countPlansSharingMobile(input, context);
   }
 
   getPlan(planId: PlanId, context: ReadContext): Promise<PlanRecord | null> {

@@ -204,6 +204,12 @@ export type PlanActionsContext = {
   readonly destinations: readonly PlanActionCoordinator[];
   /** Whether the acting role is granted each action, decided by the page from the actor. */
   readonly granted: Readonly<Record<PlanActionId, boolean>>;
+  /**
+   * Where the test text to the patient's number stands, when the page read one. Optional so a
+   * caller that predates the number check still renders; absent is treated as nothing to explain.
+   * Read to explain, beside Resume, why the service would refuse `mobile-check-unconfirmed`.
+   */
+  readonly mobileCheckState?: "notChecked" | "awaitingConfirmation" | "confirmed" | "notReceived";
 };
 
 /** A refusal in the three-part shape this workspace states every unavailable action in. */
@@ -717,6 +723,14 @@ export function mintPlanActionIdempotencyKey(action: PlanActionId): string {
   return `PLAN-${action.toUpperCase()}-${lettersFromRandomIdentifier()}`;
 }
 
+/**
+ * The digit-free random part of a key, for the patient-update writes beside this screen
+ * (`patient-updates/`). One construction, so the reason above holds for both.
+ */
+export function mintIdempotencyKeyLetters(): string {
+  return lettersFromRandomIdentifier();
+}
+
 // ---------------------------------------------------------------------------
 // What the service's own refusals mean, in plain words
 // ---------------------------------------------------------------------------
@@ -847,6 +861,47 @@ export const PLAN_ACTION_SERVICE_REFUSALS: Readonly<Record<string, PlanActionRef
       heading: "This request is larger than the service accepts",
       because: `The service holds a size limit on every request, and this one is over it. ${NOTHING_RECORDED}`,
       changedBy: "Shortening the reason for the move, then confirming again.",
+    },
+    "mobile-check-unconfirmed": {
+      heading: "The patient's number has not been confirmed yet",
+      because: `A test text was sent to this patient's number and the patient has not said it arrived, or has said it did not. The service will not start or resume this plan while the number is in doubt, so no caring message goes to a number that may be wrong. ${NOTHING_RECORDED}`,
+      changedBy:
+        "Asking the patient whether the test text arrived and recording the answer under Check the number, or changing the number if it is wrong.",
+    },
+    "mobile-check-not-awaiting": {
+      heading: "No test text is waiting for an answer",
+      because: `An answer can only be recorded for a test text that was sent and not yet answered, and the service found none waiting. ${NOTHING_RECORDED}`,
+      changedBy: "Reading this screen again to see where the number check stands.",
+    },
+    "mobile-check-send-failed": {
+      heading: "The test text could not be sent",
+      because: `The service tried to send the test text and the sending service did not take it, so the number check is unchanged. ${NOTHING_RECORDED}`,
+      changedBy: "Trying again in a moment. If it keeps failing, pass this on to whoever supports this service.",
+    },
+    "contact-detail-unchanged": {
+      heading: "Nothing was different from what the plan already holds",
+      because: `What was entered is the same as the details already on this plan, so there was nothing to change. ${NOTHING_RECORDED}`,
+      changedBy: "Entering the detail that has actually changed.",
+    },
+    "patient-mobile-invalid": {
+      heading: "That is not an Australian mobile number",
+      because: `Caring contacts are sent by text message to an Australian mobile, and the service could not read this as one. ${NOTHING_RECORDED}`,
+      changedBy: "Entering the number as 04xx xxx xxx or +61 4xx xxx xxx, then saving again.",
+    },
+    "patient-name-blank": {
+      heading: "A patient's name cannot be left blank",
+      because: `The plan has to hold the name of the person it is for, and the name entered was empty. ${NOTHING_RECORDED}`,
+      changedBy: "Entering the patient's name, then saving again.",
+    },
+    "patient-preferred-name-invalid": {
+      heading: "That preferred name cannot be used in a message",
+      because: `Messages open with the preferred name, and the service could not carry this one in a text message. ${NOTHING_RECORDED}`,
+      changedBy: "Entering the preferred name in plain letters, or leaving the box empty so none is held.",
+    },
+    "death-correction-without-cancellation": {
+      heading: "There is no recorded death on this plan to correct",
+      because: `A correction applies only to a plan that was ended, and this plan has not been. ${NOTHING_RECORDED}`,
+      changedBy: "Reading this screen again so it shows the plan as it now stands.",
     },
     "request-did-not-reach-the-service": {
       heading: "This did not reach the service",

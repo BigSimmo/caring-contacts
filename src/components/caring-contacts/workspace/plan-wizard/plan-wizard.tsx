@@ -33,6 +33,7 @@ import { overlayDefinition } from "../overlays/definitions";
 import { ExitOnlyOverlayTrigger } from "../overlays/exit-only-overlay-trigger";
 import type { WorkspaceOverlayCommit } from "../overlays/overlay-commits";
 import { WorkspaceOverlayTrigger } from "../overlays/overlay-trigger";
+import { MobileConfirmationFields, useMobileNumberCheck, type MobileNumberCheck } from "../mobile-number-check";
 import { UnavailableDestination } from "../unavailable-destination";
 import { useDirtyStateGuard } from "@/components/ui/use-dirty-state-guard";
 import { wizardDecisionRefusal, type WizardDecisionState } from "./overlay-guards";
@@ -73,6 +74,7 @@ import {
 import {
   createPlanPatientDetail,
   mobileIsDesignatedFictional,
+  mobileNumberProblem,
   parsePatientIdentifiers,
   personalisationIssues,
   type PersonalisationField,
@@ -512,6 +514,18 @@ export function PlanWizard({
     stored !== null && stored.referralId === referralId
       ? stored
       : seedDraftFromIntake(emptyPlanDraft(referralId, referralPathwayVersionId), intakePrefill);
+
+  // THE SECOND ENTRY OF THE MOBILE NUMBER IS HELD HERE, NOT IN THE DRAFT, AND THAT IS THE POINT.
+  // The draft is restored after a refresh; a second entry restored with it would fill itself in and
+  // stop being a second entry. So a refresh on stage 3 asks for the number again, and moving between
+  // stages within the tab keeps it. Held at this level rather than in the stage so Back from review
+  // does not throw it away. The shared-number check excludes this sign-up's own plan id once one has
+  // been minted, so a retry after the plan was created does not find the patient's own plan.
+  const mobileCheck = useMobileNumberCheck({
+    mobile: draft.patientDetail.patientMobileNumber,
+    mobileIsValid: mobileNumberProblem(draft.patientDetail.patientMobileNumber) === null,
+    excludePlanId: draft.submission?.planId ?? null,
+  });
 
   /**
    * Writes `change` applied to `base`, re-based onto whatever is ACTUALLY held if a conflicting
@@ -954,6 +968,7 @@ export function PlanWizard({
             patientVisibleMessageSpecimen={patientVisibleMessageSpecimen}
             preferenceGivenOnStaffedLine={draft.decisions.preferenceGivenOnStaffedLine}
             communicationPreferenceCommit={decisionCommits.communicationPreference}
+            mobileCheck={mobileCheck}
             onDetailChange={(change) =>
               update((current) => ({ ...current, patientDetail: { ...current.patientDetail, ...change } }))
             }
@@ -1722,6 +1737,7 @@ function PersonalisationStage({
   patientVisibleMessageSpecimen,
   preferenceGivenOnStaffedLine,
   communicationPreferenceCommit,
+  mobileCheck,
   onDetailChange,
   onSendingPreferenceChange,
   onBack,
@@ -1737,6 +1753,8 @@ function PersonalisationStage({
   /** Whether `communication-preference` has been confirmed. Held in the draft, on no plan. */
   preferenceGivenOnStaffedLine: boolean;
   communicationPreferenceCommit: WorkspaceOverlayCommit;
+  /** The second entry of the mobile number and the shared-number check. Held by the wizard, never in the draft. */
+  mobileCheck: MobileNumberCheck;
   onDetailChange: (change: Partial<PlanPatientDetailDraft>) => void;
   onSendingPreferenceChange: (preference: SendingPreference) => void;
   onBack: () => void;
@@ -1744,7 +1762,10 @@ function PersonalisationStage({
 }) {
   const issues = personalisationIssues({ detail, sendingPreference });
   const issueFor = (field: PersonalisationField) => issues.find((issue) => issue.field === field) ?? null;
-  const complete = issues.length === 0;
+  // The number typed twice and checked against the team's other plans is a condition on CONTINUING,
+  // not a property of the draft, so it is added here rather than to `personalisationIssues`.
+  const mobileCheckReason = mobileCheck.blockingReason;
+  const complete = issues.length === 0 && !mobileCheck.blocked;
 
   // The number is accepted whatever it is; this only decides what the screen SAYS about it.
   const mobileValid = issueFor("patientMobileNumber") === null;
@@ -1839,6 +1860,13 @@ function PersonalisationStage({
                 ? "The number entered is not one of the reserved fictional numbers listed above. It is a valid mobile number and is accepted, but a number belonging to a real person would be recorded on the plan."
                 : ""}
             </p>
+            <MobileConfirmationFields
+              id="caring-contacts-patient-mobile-again"
+              check={mobileCheck}
+              inputClassName={fieldClass}
+              labelClassName="text-sm font-medium text-[color:var(--text-heading)]"
+              textClassName={mutedTextClass}
+            />
           </div>
 
           <TextAreaField
@@ -2007,7 +2035,10 @@ function PersonalisationStage({
         <p role="status" className={mutedTextClass}>
           {complete
             ? "The name, the mobile number and the sending preference are all entered, so nothing else is needed on this stage. None of it is recorded on a plan yet; like everything else on this screen it is kept on this computer until you finish or discard."
-            : `Before this plan can be reviewed: ${issues.map((issue) => issue.message).join(" ")}`}
+            : `Before this plan can be reviewed: ${[
+                ...issues.map((issue) => issue.message),
+                ...(mobileCheckReason === null ? [] : [mobileCheckReason]),
+              ].join(" ")}`}
         </p>
         <div className="flex min-w-0 flex-col-reverse gap-3 sm:flex-row sm:justify-between">
           <button type="button" onClick={onBack} className={secondaryControlClass}>

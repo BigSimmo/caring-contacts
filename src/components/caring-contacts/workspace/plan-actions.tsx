@@ -638,6 +638,21 @@ export function PlanActions({ context }: PlanActionsProps) {
                 />
               </div>
             )}
+            {heldPlanState === "paused" &&
+            (context.mobileCheckState === "awaitingConfirmation" || context.mobileCheckState === "notReceived") ? (
+              <div className="mt-2 min-w-0" data-testid="caring-contacts-plan-action-resume-mobile-check">
+                <StatedReason
+                  heading="The service will not let this plan run again until the number is confirmed"
+                  because={
+                    context.mobileCheckState === "awaitingConfirmation"
+                      ? "A test text was sent to this patient's number and the patient has not yet said it arrived. Letting the plan run again now would be refused, so that no caring message goes to a number that may be wrong."
+                      : "The patient said the test text to this number did not arrive. Letting the plan run again now would be refused, so that no caring message goes to a number that may be wrong."
+                  }
+                  changedBy="Recording that the test text arrived under Check the number on this screen, or changing the number under Record a change and checking the new one."
+                  icon={<CircleAlert aria-hidden="true" className="size-icon-md shrink-0" />}
+                />
+              </div>
+            ) : null}
             <p className={cn(mutedTextClass, "mt-2")}>
               <span className="font-medium text-[color:var(--text)]">This plan is: </span>
               {plan === null

@@ -542,6 +542,7 @@ describe("the patient overview - Ruling 96: the first contact date is shown, and
     // asserting a grant rather than the branch.
     const record: PlanRecord = {
       plan: { id: planId("plan-x"), teamId: demoActorForRole("coordinator").teamId, state: "active", version: 1 },
+      mobileCheck: { state: "notChecked", sentAt: null, resolvedAt: null },
       patientId: patientId(PATIENT),
       referralId: referralId("referral-x"),
       pathwayVersionId: pathwayVersionId("pathway-1"),
@@ -820,6 +821,7 @@ describe("the patient overview - a contact suppressed by a later transition stil
 
   const record: PlanRecord = {
     plan: { id: planId("plan-x"), teamId: TEAM, state: "active", version: 1 },
+    mobileCheck: { state: "notChecked", sentAt: null, resolvedAt: null },
     patientId: patientId(PATIENT),
     referralId: referralId("referral-x"),
     pathwayVersionId: pathwayVersionId("pathway-1"),
@@ -930,6 +932,7 @@ describe("the patient overview - a plan that has ended says so, and never promis
   it("does not claim a plan still running ended, when one of its messages is cancelled", () => {
     const record: PlanRecord = {
       plan: { id: planId("plan-x"), teamId: demoActorForRole("coordinator").teamId, state: "active", version: 1 },
+      mobileCheck: { state: "notChecked", sentAt: null, resolvedAt: null },
       patientId: patientId(PATIENT),
       referralId: referralId("referral-x"),
       pathwayVersionId: pathwayVersionId("pathway-1"),
@@ -964,6 +967,7 @@ describe("the patient overview - a plan that has ended says so, and never promis
   it("explains a missed message as a closed window, not as a send still to come", () => {
     const record: PlanRecord = {
       plan: { id: planId("plan-x"), teamId: demoActorForRole("coordinator").teamId, state: "active", version: 1 },
+      mobileCheck: { state: "notChecked", sentAt: null, resolvedAt: null },
       patientId: patientId(PATIENT),
       referralId: referralId("referral-x"),
       pathwayVersionId: pathwayVersionId("pathway-1"),
@@ -1110,6 +1114,7 @@ function episodeView(
 function planRecordFixture(overrides: Partial<PlanRecord> = {}): PlanRecord {
   return {
     plan: { id: planId(FIXTURE_PLAN), teamId: FIXTURE_TEAM, state: "active", version: 1 },
+    mobileCheck: { state: "notChecked", sentAt: null, resolvedAt: null },
     patientId: patientId(PATIENT),
     referralId: referralId("referral-fixture"),
     pathwayVersionId: pathwayVersionId("pathway-1"),
@@ -2976,5 +2981,39 @@ describe("the plan actions - a withdrawal can carry a short reason, typed in its
     await renderPageWithOverlays();
 
     expect(screen.getByTestId("caring-contacts-withdrawal-reason")).toHaveTextContent("Moving interstate.");
+  });
+});
+
+/**
+ * "Record a change" and "Check the number" reach this screen from the PAGE, which decides them from
+ * the actor. The behaviour of each surface is `caring-contacts-patient-updates.dom.test.tsx`'s; this
+ * block proves only the wiring: a coordinator on a running plan is offered both, and an ended plan
+ * offers neither the number check nor any edit.
+ */
+describe("the patient overview - recording a change and checking the number", () => {
+  it("offers a coordinator both surfaces on a draft plan, with the number check not yet made", async () => {
+    const { store } = spiedStore();
+    await createPlan(store, "plan-solo");
+
+    await renderPage();
+
+    expect(screen.getByRole("heading", { name: "Record a change" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Check the number" })).toBeInTheDocument();
+    expect(screen.getByTestId("caring-contacts-mobile-check-state")).toHaveTextContent("Number check: Not checked");
+    // A draft cannot be held, so a readmission is not offered on one; a death still is.
+    expect(screen.queryByTestId("caring-contacts-update-readmission")).toBeNull();
+    expect(screen.getByTestId("caring-contacts-update-death")).toBeInTheDocument();
+    expect(screen.getByLabelText("Type the mobile number again")).toBeInTheDocument();
+  });
+
+  it("offers no edit and no number check on an ended plan", async () => {
+    const { store } = spiedStore();
+    const id = await createPlan(store, "plan-solo");
+    await endPlan(store, id);
+
+    await renderPage();
+
+    expect(screen.queryByRole("heading", { name: "Check the number" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Record a change" })).toBeNull();
   });
 });

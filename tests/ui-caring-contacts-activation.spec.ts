@@ -126,11 +126,27 @@ async function choosePathway(page: Page) {
   await expect(page.getByRole("region", { name: "Personalisation" })).toBeVisible();
 }
 
+/**
+ * Stage 3's second entry of the mobile number, and the shared-number check it triggers.
+ *
+ * The seed's own plans use the reserved fictional numbers, so the check may well find another
+ * patient with this one. The warning and its tick are then part of the journey rather than a
+ * failure: the tick is what a coordinator presses after checking the number with the patient.
+ */
+async function confirmMobile(page: Page, mobile: string) {
+  await page.getByLabel("Type the mobile number again").fill(mobile);
+  const result = page.getByTestId("caring-contacts-patient-mobile-again-shared-result");
+  await expect(result).toContainText(/No other patient|Another patient|could not run/);
+  const tick = page.getByRole("checkbox", { name: "I have checked this number is right" });
+  if (await tick.isVisible()) await tick.check();
+}
+
 /** Stage 3: the details a referral does not carry, then on to review and activation. */
 async function completePersonalisation(page: Page, { mobile = RESERVED_MOBILE } = {}) {
   await page.getByLabel("Patient’s name").fill("Wren Example");
   await page.getByLabel("What should we call them in messages?").fill("Wren");
   await page.getByLabel("Mobile number this plan will use").fill(mobile);
+  await confirmMobile(page, mobile);
   await page
     .getByRole("group", { name: "When in the day messages go out" })
     .getByRole("radio", { name: "Morning" })
@@ -214,8 +230,9 @@ test.describe("caring contacts activation wizard (seeded server)", () => {
     const name = page.getByLabel("Patient’s name");
     const preferred = page.getByLabel("What should we call them in messages?");
     const mobile = page.getByLabel("Mobile number this plan will use");
+    const mobileAgain = page.getByLabel("Type the mobile number again");
 
-    for (const field of [name, preferred, mobile]) {
+    for (const field of [name, preferred, mobile, mobileAgain]) {
       await expect(field).toBeVisible();
       // MEASURED FROM THE RENDERED BOX. Reading `min-h-tap` off the class attribute would pass for
       // a field whose own rule was overridden, or clipped by a 320px parent, and that is the

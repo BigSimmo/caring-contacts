@@ -146,7 +146,14 @@ export type PlanDraft = {
   assurances: PlanDraftAssurances;
   /** The pathway version this plan will run, or null while nothing has been chosen. */
   pathwayVersionId: string | null;
-  /** Stage 3's typed values, as typed. See `patient-detail.ts` for why they are held verbatim. */
+  /**
+   * Stage 3's typed values, as typed. See `patient-detail.ts` for why they are held verbatim.
+   *
+   * THE SECOND ENTRY OF THE MOBILE NUMBER IS DELIBERATELY NOT HERE. A draft is restored after a
+   * refresh, and a second entry restored with it would fill itself in -- which is exactly what
+   * typing the number twice exists to prevent. The wizard holds it in React state only
+   * (`mobile-number-check.tsx`), so a refresh on stage 3 asks for it again.
+   */
   patientDetail: PlanPatientDetailDraft;
   /**
    * When in the day every contact in this plan goes out, or null while nothing has been chosen.

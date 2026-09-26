@@ -660,6 +660,7 @@ describe("the Schedule screen — a message the system decided not to send", () 
       // Required since Task 9b. Empty rather than populated: this record is assembled by hand
       // rather than seeded, and it is not about the attestations.
       assuranceAttestations: [],
+      mobileCheck: { state: "notChecked", sentAt: null, resolvedAt: null },
       dischargeAt: DISCHARGE_AT,
       // Not under test here: this fixture asserts nothing about the unclaimed queue age, so the
       // plan's creation instant is set to the same instant as its discharge rather than invented.
@@ -782,6 +783,7 @@ describe("the Schedule screen — the boundaries of a day", () => {
       // Required since Task 9b. Empty rather than populated: this record is assembled by hand
       // rather than seeded, and it is not about the attestations.
       assuranceAttestations: [],
+      mobileCheck: { state: "notChecked", sentAt: null, resolvedAt: null },
       dischargeAt: DISCHARGE_AT,
       // Not under test here: this fixture asserts nothing about the unclaimed queue age, so the
       // plan's creation instant is set to the same instant as its discharge rather than invented.

@@ -772,6 +772,7 @@ describe("what the screen says when the plan was created but did not start (Ruli
     "action-not-granted",
     "no-roles",
     "service-stopped",
+    "mobile-check-unconfirmed",
     "invalid-request",
     "request-body-too-large",
     "access-audit-unavailable",

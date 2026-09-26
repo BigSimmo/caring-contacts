@@ -14,7 +14,9 @@ import {
   type PatientReferral,
   type WAHealthFacility,
 } from "@/lib/caring-contacts/referral";
+import { validateAustralianMobile } from "@/lib/caring-contacts/referral/synthetic-hospital-adapter";
 
+import { MobileConfirmationFields, useMobileNumberCheck } from "./mobile-number-check";
 import { workspacePanelPadded } from "./surfaces";
 
 export function formatAwstDateTimeLocal(date: Date): string {
@@ -108,6 +110,13 @@ export function ManualIntakeForm() {
   const [cohort, setCohort] = useState("adult_crisis");
   const [clinicalSummary, setClinicalSummary] = useState("");
   const [safetyAlerts, setSafetyAlerts] = useState("");
+  // The second entry of the mobile number and the shared-number check. The second entry lives only
+  // in this component's state: it is never sent to the intake route and never stored anywhere, so
+  // it cannot fill itself in. See `mobile-number-check.tsx`.
+  const mobileCheck = useMobileNumberCheck({
+    mobile: mobileNumber,
+    mobileIsValid: validateAustralianMobile(mobileNumber).ok,
+  });
 
   // Submission State
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -137,6 +146,9 @@ export function ManualIntakeForm() {
     setGivenName(pat.givenName ?? "");
     setFamilyName(pat.familyName ?? "");
     setMobileNumber(pat.mobile ?? "");
+    // The sample fills the first entry only. The second is still typed by a person, because the
+    // point of it is that a person reads the number twice.
+    mobileCheck.reset();
     setAdmittingWard(typeof ep.admittingWard === "string" ? ep.admittingWard : "Acute Unit");
     setDischargeDate(formatAwstDateTimeLocal(new Date()));
     setCohort(typeof ep.cohort === "string" ? ep.cohort : "adult_crisis");
@@ -149,6 +161,12 @@ export function ManualIntakeForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // The second entry and the shared-number check are guards on the typing, checked here before
+    // anything is sent. The field-level statements say exactly what is wrong; this names it at the top.
+    if (validateAustralianMobile(mobileNumber).ok && mobileCheck.blocked) {
+      setErrorMessage(mobileCheck.blockingReason ?? "Check the mobile number with the patient before saving.");
+      return;
+    }
     setIsSubmitting(true);
     setErrorMessage(null);
     setStagedReferralId(null);
@@ -225,6 +243,7 @@ export function ManualIntakeForm() {
     setGivenName("");
     setFamilyName("");
     setMobileNumber("");
+    mobileCheck.reset();
     setAdmittingWard("");
     setClinicalSummary("");
     setSafetyAlerts("");
@@ -511,6 +530,17 @@ export function ManualIntakeForm() {
               <p id="mobile-number-hint" className="text-xs text-[color:var(--text-muted)]">
                 Must be an Australian mobile number. Landline numbers cannot receive SMS contacts.
               </p>
+            </div>
+
+            {/* Mobile Number, typed again, and the shared-number check */}
+            <div className="space-y-1">
+              <MobileConfirmationFields
+                id="mobile-number-again"
+                check={mobileCheck}
+                inputClassName={fieldClass}
+                labelClassName={labelClass}
+                textClassName="text-xs text-[color:var(--text-muted)]"
+              />
             </div>
 
             {/* Cohort */}

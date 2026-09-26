@@ -175,6 +175,8 @@ export type WriteSpec<T> = {
   input: unknown;
   context: WriteContext;
   auditAction: string;
+  /** The audit action for an ACCEPTED write when it depends on what the write found. An identifier, never a value. */
+  auditActionFor?: (value: T) => string;
   objectId: string;
   objectType?: string;
   bypassServiceStopGate?: boolean;
@@ -294,7 +296,7 @@ export function createExecutionContext(
           actorId: actor.id,
           actorRoles: actorRoleNames(actor),
           teamId: actor.teamId,
-          action: spec.auditAction,
+          action: staged.ok && spec.auditActionFor ? spec.auditActionFor(staged.value) : spec.auditAction,
           objectType: spec.objectType ?? "plan",
           objectId: spec.objectId,
           outcome,
