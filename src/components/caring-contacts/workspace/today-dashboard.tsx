@@ -20,8 +20,10 @@ import { isWithinApprovedSendWindow } from "@/lib/caring-contacts/schedule";
 import type { ScheduleDay, ScheduleEntry } from "@/lib/caring-contacts/schedule-view";
 import type { ServiceState } from "@/lib/caring-contacts/service-state";
 import type { TeamWorkloadView } from "@/lib/caring-contacts/team-workload";
+import type { InboundReplyRecord } from "@/lib/caring-contacts/inbound-replies";
 
 import { CONTACT_STATE_LABELS, MESSAGE_TYPE_LABELS } from "./contact-vocabulary";
+import { RepliesToCheck } from "./inbound-replies";
 import { ListEmptyState } from "./list-empty-state";
 import { workspacePanel, workspacePanelPadded } from "./surfaces";
 
@@ -31,6 +33,12 @@ export type TodayDashboardProps = {
   serviceState: ServiceState;
   todayCalendarDay: string;
   mayViewPlans?: boolean;
+  /**
+   * Incoming text messages (2026-09-26): patients' replies not yet followed up, without their
+   * words. Null (or absent) when the acting role may not read replies -- the list is then not
+   * shown at all rather than shown empty, for the same reason `mayViewPlans` withholds the view.
+   */
+  repliesToCheck?: readonly InboundReplyRecord[] | null;
 };
 
 const badgeClass =
@@ -42,6 +50,7 @@ export function TodayDashboard({
   serviceState,
   todayCalendarDay,
   mayViewPlans = true,
+  repliesToCheck = null,
 }: TodayDashboardProps) {
   const { counts, exceptions, outsideApprovedWindows, windows } = scheduleDay;
   const { unclaimed, coordinators, thresholdMinutes } = teamWorkload;
@@ -93,6 +102,8 @@ export function TodayDashboard({
   if (hasNoCaseload) {
     return (
       <div data-testid="caring-contacts-today-empty" className="space-y-6">
+        {/* A reply can arrive on a plan that has ended, so it is shown even with no caseload. */}
+        {repliesToCheck !== null && repliesToCheck.length > 0 ? <RepliesToCheck replies={repliesToCheck} /> : null}
         <ListEmptyState
           kind="no-data"
           heading="No caring contacts active today"
@@ -274,6 +285,9 @@ export function TodayDashboard({
           </div>
         </div>
       </section>
+
+      {/* Incoming text messages (2026-09-26): patients' replies waiting for a person. */}
+      {repliesToCheck !== null ? <RepliesToCheck replies={repliesToCheck} /> : null}
 
       {/* 2. Action Queue & Operational Review */}
       <section aria-labelledby="action-queue-heading" data-testid="caring-contacts-action-queue" className="space-y-4">
