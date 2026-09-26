@@ -299,3 +299,27 @@ do (accounts, credentials and sign-off).
 - Not re-run this round: the Australian container build (it built and ran in the second round;
   this round added one small library, `jose`, for sign-in). Sign-in and Telstra sending are tested
   only against offline stand-ins, never a real provider.
+
+## Staff alerts and the health check
+
+Staff alerts are now actually sent, and the health check notices when the background sender stops.
+
+- **What an alert says.** Only the kind of problem, how many items, a fixed reason and the team,
+  for example "2 items affected by permanent delivery failure". Never a patient's name, number or
+  message.
+- **Where it goes.** Staff sign-in keeps no email address or phone number, so alerts go to one team
+  channel (a Teams or Slack incoming webhook, or an email relay). Until that address is set, alerts
+  are only kept in memory and written to the log. The settings are in `.env.example`.
+- **Which alerts go.** Failed deliveries and messages that need checking go only when someone in
+  the team has switched that alert on. Three safety alerts always go: a safety stop was raised, the
+  background sender has stopped, or the text-message carrier is limiting how fast we can send.
+- **No repeats.** The same alert is sent at most once an hour while the problem continues.
+- **The health check** (`/api/caring-contacts/ready`) now says whether the sender is running. With
+  real text messages or live mode on, it reports the service as not ready when no sender run has
+  finished for 15 minutes, and sends the "sender stopped" alert. In the demo it only reports.
+- **Carrier limits.** If the carrier says "too many requests", that run stops sending; the other
+  due messages go on the next run, still inside their sending hours.
+
+New database file 0020 holds the sender's last-run time and when each alert was last sent. Full
+details for the people running it: `deploy/australia/README.md`, "Staff alerts and the sender
+health check".
