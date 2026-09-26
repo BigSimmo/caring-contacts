@@ -102,9 +102,10 @@ Expected results in the demo smoke test:
 
 How the container fails closed when it is not deliberately switched on:
 
-- **No `CARING_CONTACTS_DEMO_ENABLED` and no database:** it starts, but the workspace shows
-  "could not be found", the Caring Contacts API answers 404, the readiness probe answers 503 and
-  Docker marks it `unhealthy`.
+- **No `CARING_CONTACTS_DEMO_ENABLED` and no database:** it starts, but the workspace answers 404
+  with a plain "Not found" page, the Caring Contacts API answers 404, the readiness probe answers
+  503 with `{"ok":false,"store":"unavailable","caringContactsDatabase":"missing"}` and Docker marks
+  it `unhealthy`.
 - **`CARING_CONTACTS_DEMO_ENABLED=false` (live mode) without a database, secret, complete staff
   sign-in settings and signed governance attestation:** the server logs `Refusing to start: ...`
   (naming each missing setting, never its value) and answers 500 to every request; Docker marks it
