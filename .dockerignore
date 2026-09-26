@@ -1,0 +1,14 @@
+# Keep the container build context to source only. The image installs its own dependencies,
+# so the host's node_modules and build output must never be copied over them.
+.git/
+node_modules/
+.next/
+.next-playwright/
+.cache/
+coverage/
+test-results/
+playwright-report/
+**/.env*
+!.env.example
+deploy/australia/env.australia
+docs/caring-contacts/atlas/

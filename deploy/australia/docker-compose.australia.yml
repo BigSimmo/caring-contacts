@@ -1,0 +1,70 @@
+name: caring-contacts-sovereign-australia
+
+# Caring Contacts Sovereign Australian Container Orchestration
+# Resolves Hazard H-36 (Issue #NCAWAF): In-country compute with isolated networking.
+# See docs/deployment/caring-contacts-sovereign-australia.md.
+
+services:
+  caring-contacts-app:
+    build:
+      context: ../..
+      # Standalone extract: PsychSift Supabase and Sentry settings removed; Caring Contacts reads only
+      # the CARING_CONTACTS_* variables below.
+      dockerfile: deploy/australia/Dockerfile.australia
+      args:
+        NEXT_PUBLIC_CARING_CONTACTS_TRAINING_MODE: ${NEXT_PUBLIC_CARING_CONTACTS_TRAINING_MODE:-false}
+    image: caring-contacts-app-australia:latest
+    container_name: caring-contacts-sovereign-app
+    restart: unless-stopped
+    env_file:
+      - path: ./env.australia
+        required: false
+    # Only fixed, non-secret values belong here. Compose gives `environment` priority over
+    # `env_file`, so listing CARING_CONTACTS_DATABASE_URL, the session and governance secrets or
+    # CARING_CONTACTS_DEMO_ENABLED here (even as an empty ${VAR}) silently replaced whatever
+    # env.australia set. Those now come from env.australia only. If CARING_CONTACTS_DEMO_ENABLED
+    # is not set there, the workspace stays closed and the readiness probe answers 503.
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - CARING_CONTACTS_REGION=ap-southeast-2
+      - ZERO_DATA_EGRESS_AUSTRALIA=true
+      - NEXT_PUBLIC_CARING_CONTACTS_TRAINING_MODE=false
+    ports:
+      # Bind exclusively to 127.0.0.1 to avoid exposing the unproxied service to the public host interface
+      - "127.0.0.1:3000:3000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/caring-contacts/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4096M
+        reservations:
+          cpus: "1.0"
+          memory: 2048M
+    networks:
+      - sovereign_isolated_net
+
+networks:
+  sovereign_isolated_net:
+    name: caring_contacts_sovereign_net
+    driver: bridge
+    labels:
+      sovereign.zone: "ap-southeast-2"
+      sovereign.data-residency: "Australia"
+      sovereign.hazard: "H-36"

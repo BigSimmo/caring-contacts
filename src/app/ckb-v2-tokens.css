@@ -1,0 +1,521 @@
+/* PsychSift v2 token layer — globally active, class-scoped for rollback.
+ *
+ * Source of truth: THIS FILE (`src/app/ckb-v2-tokens.css`), ranked #2 under
+ * AGENTS.md per docs/design-system/SPEC.md. Committed tests are #3. The design
+ * project (08d6f126…) mirrors this reconciled copy — a divergent design export
+ * is not authoritative (DECISIONS C1 / TOKENS.md).
+ *
+ * Structural half (space, type, radius, elevation, density, icons, motion) and
+ * shell colours are both class-scoped here. Production mounts `ckb-v2` on the
+ * root html element; literal subtree mounts remain valid for isolated proof and
+ * rollback. The compatibility values stay in `:root` and are not a second copy
+ * of this canonical layer.
+ *
+ * Rules the values encode, which call sites must honour:
+ *   - One filled `--command` button per surface. Navy is app chrome only.
+ *   - `--text-soft` / `--decoration-soft` are ~3.2:1 on white — decoration only
+ *     (dots, dividers, glyphs). Label and caption TEXT uses `--text-muted`;
+ *     placeholders use `--text-placeholder` (both ≥4.5:1).
+ *   - Borders own the edge, shadows own the lift - never both on one element.
+ *     Borderless floating surfaces (menus, toasts, tooltips, sheets) take
+ *     `--ring-hairline` for their edge.
+ *   - No raw pixels in component markup: use the semantic space tokens.
+ */
+/* Repeat the scope class deliberately. This file is imported before the live
+   compatibility tokens in globals.css; a single class ties :root specificity
+   and therefore loses by source order. The repeated class keeps both root and
+   reversible subtree mounts scoped while making the canonical v2 values win. */
+.ckb-v2.ckb-v2 {
+  /* Space - 4px base, one scale */
+  --space-0: 0;
+  --space-1: 0.25rem; /* 4 */
+  --space-2: 0.5rem; /* 8 */
+  --space-3: 0.75rem; /* 12 */
+  --space-4: 1rem; /* 16 */
+  --space-5: 1.25rem; /* 20 */
+  --space-6: 1.5rem; /* 24 */
+  --space-7: 2rem; /* 32 */
+  --space-8: 2.5rem; /* 40 */
+  --space-9: 3rem; /* 48 */
+  --space-10: 4rem; /* 64 */
+  --space-11: 6rem; /* 96 */
+
+  /* Semantic spacing - the only values layout should reference */
+  --gap-tight: var(--space-2); /* icon/label, chip rows */
+  --gap-inline: var(--space-3); /* sibling controls */
+  --gap-stack: var(--space-4); /* stacked items in a group */
+  --gap-block: var(--space-6); /* between blocks inside a panel */
+  --gap-section: var(--space-7); /* between page sections */
+  --pad-chip-x: var(--space-3);
+  --pad-control-x: var(--space-4);
+  --pad-cta-x: var(--space-5);
+  --pad-card: var(--space-5); /* source cards, dose rows */
+  --pad-panel: var(--space-6); /* answer card, panels */
+  --pad-strip: var(--space-3) var(--space-6); /* footers, quiet strips */
+  --page-gutter: var(--space-6);
+  --page-max: 1080px;
+  --measure: 68ch; /* prose measure - never wider */
+  --header-h: 4rem; /* 64 */
+
+  /* Responsive breakpoint tokens - standard named scale (Task #336) */
+  --bp-phone: 640px;
+  --bp-tablet: 768px;
+  --bp-desktop: 1024px;
+
+  /* Type - 7 size steps. xs–xl are size-only; shared leading is
+   * `--leading-prose`. Hero is the only step with dedicated companions
+   * (`--text-hero--line-height`, `--text-hero-tr`).
+   *
+   * TWO SCALES ARE LIVE AT ONCE, and this block is the one that wins. Because
+   * `ckb-v2` is mounted on <html>, every step below overrides both Tailwind's
+   * default of the same name and the `@theme` block in globals.css. Note in
+   * particular that `--text-sm` here is 13px, not Tailwind's 14px, so the plain
+   * `text-sm` utility renders 13px app-wide.
+   *
+   * The `@theme` block carries the same pixel values under a second set of
+   * names. Neither file referenced the other, which is how the overlap went
+   * unnoticed; the mapping is recorded here rather than resolved by aliasing,
+   * because pointing this file at `@theme` would invert the documented
+   * source-of-truth order (this file ranks above the compat layer):
+   *
+   *     --text-xs   0.75rem   = Tailwind default --text-xs
+   *     --text-sm   0.8125rem = @theme --text-sm-minus
+   *     --text-body 0.9375rem = @theme --text-base-minus
+   *     --text-md   1.0625rem = @theme --text-lg-minus
+   *     --text-lg   1.25rem   = Tailwind default --text-xl
+   *     --text-xl   1.5rem    = Tailwind default --text-2xl
+   *
+   * Do not reintroduce per-step `-lh` / `-tr` orphans for xs–xl. Wiring those
+   * would be type-scale adoption, not a companion-token restore. */
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-body: 0.9375rem;
+  --text-md: 1.0625rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --text-hero: clamp(1.75rem, 1.2rem + 2vw, 2.25rem);
+  --text-hero--line-height: 1.12;
+  --text-hero-tr: -0.022em;
+
+  --leading-prose: 1.65;
+  --tracking-eyebrow: 0.08em;
+  --nums: tabular-nums; /* font-variant-numeric: var(--nums) on all data */
+
+  /* Weights - one job each (Geist is variable, so 650 is real) */
+  --font-weight-body: 400;
+  --font-weight-label: 500;
+  --font-weight-heading: 600;
+  --font-weight-value: 650;
+
+  /* Radius - one step per surface role */
+  --radius-sm: 0.375rem; /* 6 - chips, pills, dots */
+  --radius-md: 0.625rem; /* 10 - controls, inputs, buttons */
+  --radius-lg: 0.75rem; /* 12 - cards, table cards, popovers */
+  --radius-xl: 1rem; /* 16 - panels, answer card */
+  --radius-2xl: 1.25rem; /* 20 - sheets, dialogs */
+
+  /* Icons - four sizes, paired with the type steps */
+  --icon-xs: 0.75rem; /* 12 - inside chips */
+  --icon-sm: 0.875rem; /* 14 - inline with 13-15px text */
+  --icon-md: 1rem; /* 16 - controls */
+  --icon-lg: 1.25rem; /* 20 - empty states, tiles */
+
+  /* Density - tap target is not row height */
+  /* Pure alias of the @theme knob (C2). The value lives in globals.css because
+     that is where the *-tap utilities are generated; declaring it here would
+     either lose a same-specificity tie (design-side :root copy) or win inside
+     opted-in subtrees and split the app 44/48. Never set independently. */
+  --tap-min: var(--spacing-tap); /* interactive only */
+  --chip-height: 1.75rem; /* 28 - static chips */
+  --row-comfortable: 2.75rem;
+  --row-compact: 2.25rem;
+  --cell-pad-comfortable: var(--space-3);
+  --cell-pad-compact: var(--space-2);
+
+  /* Accent rules */
+  --rule-w: 3px;
+  --rule-accent: inset var(--rule-w) 0 0 var(--clinical-accent);
+  --rule-warning: inset var(--rule-w) 0 0 var(--warning);
+
+  /* Evidence gutter - one fixed column owning both the connector line and the
+     dot, centred on the same axis. The bleed is derived from the row padding so
+     a density switch keeps the line continuous. */
+  --gutter-col: 1.25rem; /* 20 - column width */
+  --gutter-dot: 0.5rem; /* 8 - dot diameter, identical for every state */
+  --gutter-line-w: 1px;
+
+  /* Quantity - the unit is demoted, never uppercased. Slight positive tracking
+     because a 13px sans unit beside a mono numeral otherwise reads cramped. */
+  --quantity-unit-tracking: 0.01em;
+  --quantity-unit-gap: 0.15em;
+
+  /* Evidence spine - the answer's left evidence rule (docs/design-system/SPEC.md
+     §7, §10). C1 note: the design-side token file proved unrecoverable (design
+     project 08d6f126 was last updated 2026-07-13; the 31 July copy was never
+     written to it), so these family names are authored repo-side, derived from
+     existing roles rather than reconstructed from prose. */
+  --spine-w: var(--rule-w);
+  --spine-current: var(--clinical-accent);
+  --spine-stale: var(--warning);
+
+  /* Status mark - codifies StatusMark's previously-inline geometry. The
+     confidence-meter family is deliberately absent: no call site exists yet
+     (no new token without a call site). */
+  --status-mark-size: var(--gutter-dot);
+  --status-mark-stroke: 1.5px;
+
+  /* Dashed edge - drop targets and "nothing here yet" boundaries. A distinct
+     token so a dropzone stops borrowing --border-strong, which means emphasis. */
+  --border-dashed: #c3cedd;
+
+  /* Stacking rungs. The prose ladder in globals.css was unenforceable and had
+     drifted into two notations (`z-80` and `z-[80]`) for one rung. Elevation and
+     stacking are the same decision, so each rung names its --eN partner. */
+  --z-base: 0; /*      flush, in-flow                        */
+  --z-raised: 10; /*   sticky headers, badges, count bubbles  - pairs with --e1 */
+  --z-chrome: 60; /*   app chrome, mode menus                 - pairs with --e2 */
+  --z-overlay: 80; /*  viewer + table fullscreen              - pairs with --e3 */
+  --z-popover: 95; /*  popovers that must beat an overlay     - pairs with --e3 */
+  --z-modal: 100; /*   the Sheet layer, skip link             - pairs with --e4 */
+  --z-toast: 110; /*   outcome announcements beat the modal   - pairs with --e4 */
+
+  /* Motion — aligned to live globals.css SoT (Wave 4: --duration-slow 240ms,
+     not the prior 260ms dual-SoT). Expanded ladder matches observed literals. */
+  --duration-instant: 100ms;
+  --duration-fast: 120ms;
+  --duration-quick: 150ms;
+  --duration-base: 180ms;
+  --duration-moderate: 200ms;
+  --duration-slow: 240ms;
+  --duration-deliberate: 300ms;
+  /* Two general curves. Phone-chrome hide/reveal are separate (see globals).
+     Enter/exit uses the soft/standard curve; only a control that should feel
+     physical (toggle thumb, sheet drag) uses the spring/physical curve. */
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-physical: cubic-bezier(0.34, 1.3, 0.64, 1);
+  /* Non-colliding name: Tailwind v4 owns --ease-out (see globals.css). */
+  --ease-out-keyword: cubic-bezier(0, 0, 0.58, 1);
+  --ease-chrome-hide: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-chrome-reveal: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* `:not([data-motion="full"])` keeps this in step with the in-app Motion
+   preference, which can opt back in to animation over the OS setting. */
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="full"]) .ckb-v2.ckb-v2 {
+    --duration-instant: 0ms;
+    --duration-fast: 0ms;
+    --duration-quick: 0ms;
+    --duration-base: 0ms;
+    --duration-moderate: 0ms;
+    --duration-slow: 0ms;
+    --duration-deliberate: 0ms;
+  }
+}
+
+/* Crisp white light shell (#10, #24). Command stays graphite, matching the
+   live compatibility layer and docs/redesign/permanent-colour-direction.md —
+   command (CTA) and clinical-accent (evidence/selected/send) are deliberately
+   different roles; a blue command briefly shipped here and collapsed that
+   distinction (reverted per design-system review, 2026-08-05).
+   Light is the default on .ckb-v2 itself - never :not(.dark), which matched a
+   subtree inside html.dark and overrode the inherited dark values (DS-01). */
+.ckb-v2.ckb-v2 {
+  --background: #ffffff;
+  --surface: #fcfdfe;
+  --surface-chrome: #ffffff;
+  --surface-raised: #fcfdfe;
+  --surface-lux: #ffffff;
+
+  /* The only non-white surfaces - both whispers */
+  --surface-subtle: #fbfcfd; /* table headers, zebra rows */
+  --surface-wash: #f8fafc; /* footers, quiet strips */
+  --surface-inset: #f4f7fa; /* recessed wells, inputs */
+  --surface-highlight: rgb(255 255 255 / 70%);
+  --clinical-chat-table-header: #fbfcfd;
+  --clinical-chat-document: #f8fafc;
+
+  --border: #e2e8f0;
+  --border-strong: #c8d2de;
+  /* Solid, not 55% alpha: alpha computed LIGHTER than --border, so panels had
+     weaker edges than the cards nested inside them (#43). */
+  --border-lux: #dde4ee;
+
+  --text-heading: #0a1220;
+  --text: #1b2533;
+  --text-muted: #55627a;
+  /* Placeholder is still text (expected format in clinical data entry) — must
+     clear 4.5:1. Same ink as muted until a distinct placeholder step is needed. */
+  --text-placeholder: #55627a;
+  /* 3.07:1 on white. Decoration only - dots, dividers, disabled glyphs, rules.
+     Never a text node. `--decoration-soft` is the name that should have shipped:
+     `--text-soft` reads like a text tier and has now been misused in three
+     separate places, including inside the document prohibiting the misuse. Both
+     names resolve to the same value during the deprecation window. */
+  --text-soft: #8894a6;
+  --decoration-soft: #8894a6;
+  --disabled: #8794a8;
+
+  --command: #111827;
+  --command-hover: #0b1220;
+  --command-active: #080b0f;
+  --command-contrast: #ffffff;
+  --danger-solid: #a3190f;
+  --danger-solid-hover: #85140d;
+  --danger-solid-active: #6f120c;
+  --danger-solid-contrast: #ffffff;
+
+  --clinical-accent-soft: #f2f8fe;
+  --clinical-accent-border: #cfe2f6;
+  --primary-soft: #f2f8fe;
+
+  /* Category / identity chip tones — canonical under v2 so Chip CATEGORY does
+     not silently lose its palette if the globals.css compatibility layer is
+     trimmed. Values match the live :root compatibility set. */
+  --type-document: #3a5a94;
+  --type-document-soft: #f0f4fa;
+  --type-document-border: #d3dfef;
+  --type-table: #2f6b57;
+  --type-table-soft: #eef5f2;
+  --type-table-border: #cfe3da;
+  --type-search: #4a5568;
+  --type-search-soft: #f4f5f7;
+  --type-search-border: #dfe2e8;
+  --type-source: #634f8f;
+  --type-source-soft: #f4f1fa;
+  --type-source-border: #ded6ee;
+  --type-service: #2b6474;
+  --type-service-soft: #eaf4f7;
+  --type-service-border: #c4dfe7;
+  --type-form: #7d5a2c;
+  --type-form-soft: #f8f4ec;
+  --type-form-border: #e8dbc4;
+  --tone-purple: #634f8f;
+  --tone-purple-soft: #f4f1fa;
+  --tone-purple-border: #ded6ee;
+  --tone-indigo: #43508f;
+  --tone-indigo-soft: #f0f2fa;
+  --tone-indigo-border: #d6dcef;
+  --tone-rose: #8a4a7d;
+  --tone-rose-soft: #f9f0f6;
+  --tone-rose-border: #eed6e6;
+  --tone-slate: #4a5568;
+  --tone-slate-soft: #f4f5f7;
+  --tone-slate-border: #dfe2e8;
+
+  --ring-hairline: 0 0 0 1px rgb(13 40 71 / 7%);
+  --e0: none;
+  --e1: 0 1px 2px rgb(13 40 71 / 5%);
+  --e2: 0 1px 2px rgb(13 40 71 / 4%), 0 8px 16px -8px rgb(13 40 71 / 9%);
+  --e3: 0 2px 4px rgb(13 40 71 / 4%), 0 16px 28px -12px rgb(13 40 71 / 11%);
+  --e4: 0 4px 8px rgb(13 40 71 / 5%), 0 32px 56px -20px rgb(13 40 71 / 15%);
+  /* Recessed wells (C1). A true inset, not a 1px ring - the ring is why inputs
+     looked outlined twice (#40). The DS bevel --shadow-inset is inherited from
+     globals.css and no longer overridden here: the override stripped the bevel
+     highlight from ~40 consuming surfaces. */
+  --shadow-well: inset 0 1px 2px rgb(13 40 71 / 4%);
+  --glow-primary: 0 0 0 1px var(--clinical-accent), 0 8px 20px -6px rgb(29 111 184 / 22%);
+  --glow-soft: 0 0 0 1px rgb(29 111 184 / 24%), 0 4px 12px -4px rgb(29 111 184 / 14%);
+
+  --overlay-backdrop: rgb(13 40 71 / 32%);
+}
+
+/* Dark ramp (#8, #19): four surfaces >=4 L* apart, lighter as they rise.
+   Both forms: production puts .dark on documentElement (ancestor form). */
+.dark .ckb-v2.ckb-v2,
+.ckb-v2.dark.ckb-v2 {
+  --background: #0b0e11;
+  --surface: #12161a;
+  --surface-chrome: #0e1216;
+  --surface-subtle: #1c2126; /* aliased UP - "subtle" must lift, not sink */
+  --surface-wash: #161a1e;
+  --surface-raised: #1c2126;
+  --surface-inset: #0a0c0e;
+  --surface-lux: #262c32;
+  --surface-highlight: rgb(255 255 255 / 6%);
+  --clinical-chat-table-header: #1c2126;
+  /* Declared here so it resolves against the v2 dark inset. Without this, the
+     subtree inherits the live .dark layer's already-substituted value - custom
+     properties inherit computed values, so the live var(--surface-inset)
+     reference cannot re-resolve against the v2 ramp. */
+  --clinical-chat-document: var(--surface-inset);
+
+  --border: #333a41;
+  --border-strong: #47505a;
+  --border-lux: #3a424a;
+
+  /* Required since the cascade port: the light block now matches inside dark
+     subtrees too, so every light-declared role must be re-declared here or it
+     resolves to light ink on dark surfaces. Values mirror the live .dark layer
+     these previously fell through to. */
+  --text-heading: #fbfcfd;
+  --text: #f4f6f8;
+  --disabled: #626c7a;
+  --text-muted: #a8b2bd;
+  --text-placeholder: #a8b2bd;
+  --text-soft: #7d8792;
+  --decoration-soft: #7d8792;
+  --border-dashed: #454e57;
+
+  --command: #f5f7f7;
+  --command-hover: #e6e9e8;
+  --command-active: #cbd1d8;
+  --command-contrast: #0a0c0e;
+  --danger-solid: #b42318;
+  --danger-solid-hover: #d92d20;
+  --danger-solid-active: #912018;
+  --danger-solid-contrast: #ffffff;
+
+  --clinical-accent-soft: #123556;
+  --clinical-accent-border: #235a7d;
+  --primary-soft: #123556;
+  --glow-primary: 0 0 0 1px color-mix(in srgb, var(--clinical-accent) 45%, transparent), 0 8px 24px rgb(0 0 0 / 45%);
+  --glow-soft: 0 0 0 1px color-mix(in srgb, var(--clinical-accent) 32%, transparent), 0 6px 16px rgb(0 0 0 / 42%);
+  --overlay-backdrop: rgb(0 0 0 / 72%);
+
+  /* Category / identity chip tones — dark ramp (mirrors live .dark layer). */
+  --type-document: #9db6dc;
+  --type-document-soft: #1a2438;
+  --type-document-border: #2b3d5e;
+  --type-table: #93c7b3;
+  --type-table-soft: #152820;
+  --type-table-border: #2a4d3d;
+  --type-search: #c3c9d4;
+  --type-search-soft: #1e222a;
+  --type-search-border: #3a4150;
+  --type-source: #bdb0da;
+  --type-source-soft: #241f33;
+  --type-source-border: #3c3352;
+  --type-service: #96c6d4;
+  --type-service-soft: #16262c;
+  --type-service-border: #2b4650;
+  --type-form: #d6bd8a;
+  --type-form-soft: #2b2317;
+  --type-form-border: #4d4028;
+  --tone-purple: #b0a0d8;
+  --tone-purple-soft: #2a2540;
+  --tone-purple-border: #3d3557;
+  --tone-indigo: #9aa5dd;
+  --tone-indigo-soft: #232842;
+  --tone-indigo-border: #343b5a;
+  --tone-rose: #d99cc8;
+  --tone-rose-soft: #3a2434;
+  --tone-rose-border: #52344a;
+  --tone-slate: #9aa4b4;
+  --tone-slate-soft: #22262d;
+  --tone-slate-border: #333a44;
+
+  --ring-hairline: 0 0 0 1px rgb(255 255 255 / 9%);
+  --e0: none;
+  --e1: inset 0 1px 0 rgb(255 255 255 / 4%), 0 1px 2px rgb(0 0 0 / 40%);
+  --e2: inset 0 1px 0 rgb(255 255 255 / 5%), 0 8px 18px -8px rgb(0 0 0 / 48%);
+  --e3: inset 0 1px 0 rgb(255 255 255 / 6%), 0 16px 30px -12px rgb(0 0 0 / 56%);
+  --e4: inset 0 1px 0 rgb(255 255 255 / 7%), 0 32px 56px -20px rgb(0 0 0 / 64%);
+  --shadow-well: inset 0 1px 2px rgb(0 0 0 / 40%);
+}
+
+/* Forced colours - the third theme (C4, DS-02). All three selectors retain the
+   repeated v2 scope so this canonical mapping outranks the later compatibility
+   forced-colour block at both the root and reversible subtree mounts. Elevation
+   flattens to none; roles map to system colours.
+
+   Do not trim this selector group to a single `.ckb-v2.ckb-v2`. The two dark
+   selectors are what let this block match the specificity of the dark rules it
+   has to beat; without them a forced-colours user in dark mode silently keeps
+   the dark palette instead of system colours, with nothing failing to say so.
+   The contract test pins the group - keep it pinned. */
+@media (forced-colors: active) {
+  .ckb-v2.ckb-v2,
+  .dark .ckb-v2.ckb-v2,
+  .ckb-v2.dark.ckb-v2 {
+    --background: Canvas;
+    --surface: Canvas;
+    --surface-chrome: Canvas;
+    --surface-subtle: Canvas;
+    --surface-wash: Canvas;
+    --surface-raised: Canvas;
+    --surface-inset: Canvas;
+    --surface-lux: Canvas;
+    --surface-highlight: transparent;
+    --clinical-chat-table-header: Canvas;
+    --clinical-chat-document: Canvas;
+    --border: CanvasText;
+    --border-strong: CanvasText;
+    --border-lux: CanvasText;
+    --border-dashed: CanvasText;
+    --text-heading: CanvasText;
+    --text: CanvasText;
+    --text-muted: CanvasText;
+    --text-placeholder: CanvasText;
+    --text-soft: GrayText;
+    --decoration-soft: GrayText;
+    --disabled: GrayText;
+    /* Match the live HCM lesson (globals.css): Chromium paints a Canvas
+       backplate behind glyph runs, so command fills use the native button
+       pairing — not LinkText/Canvas, which blanks labels and swallows icons. */
+    --command: ButtonFace;
+    --command-hover: ButtonFace;
+    --command-active: ButtonFace;
+    --command-contrast: ButtonText;
+    --clinical-accent: LinkText;
+    --clinical-accent-soft: Canvas;
+    --clinical-accent-border: CanvasText;
+    --clinical-accent-contrast: ButtonText;
+    --primary-soft: Canvas;
+    --success: CanvasText;
+    --warning: CanvasText;
+    /* Status text sits on Canvas; Mark is a fill, not its paired foreground. */
+    --danger: CanvasText;
+    --danger-solid: Mark;
+    --danger-solid-hover: Mark;
+    --danger-solid-active: Mark;
+    --danger-solid-contrast: MarkText;
+    --type-document: CanvasText;
+    --type-document-soft: Canvas;
+    --type-document-border: ButtonBorder;
+    --type-table: CanvasText;
+    --type-table-soft: Canvas;
+    --type-table-border: ButtonBorder;
+    --type-search: CanvasText;
+    --type-search-soft: Canvas;
+    --type-search-border: ButtonBorder;
+    --type-source: CanvasText;
+    --type-source-soft: Canvas;
+    --type-source-border: ButtonBorder;
+    --type-service: CanvasText;
+    --type-service-soft: Canvas;
+    --type-service-border: ButtonBorder;
+    --type-form: CanvasText;
+    --type-form-soft: Canvas;
+    --type-form-border: ButtonBorder;
+    --tone-purple: CanvasText;
+    --tone-purple-soft: Canvas;
+    --tone-purple-border: ButtonBorder;
+    --tone-indigo: CanvasText;
+    --tone-indigo-soft: Canvas;
+    --tone-indigo-border: ButtonBorder;
+    --tone-rose: CanvasText;
+    --tone-rose-soft: Canvas;
+    --tone-rose-border: ButtonBorder;
+    --tone-slate: CanvasText;
+    --tone-slate-soft: Canvas;
+    --tone-slate-border: ButtonBorder;
+    --focus: Highlight;
+    --ring-hairline: 0 0 0 1px CanvasText;
+    --e0: none;
+    --e1: none;
+    --e2: none;
+    --e3: none;
+    --e4: none;
+    --shadow-well: none;
+    --glow-primary: none;
+    --glow-soft: none;
+    /* Transparent, not Canvas: forced-colours users rely on borders for layer
+       separation, and an opaque backdrop would hide the context behind a modal. */
+    --overlay-backdrop: transparent;
+    --rule-accent: inset var(--rule-w) 0 0 LinkText;
+    --rule-warning: inset var(--rule-w) 0 0 CanvasText;
+    --spine-current: LinkText;
+    --spine-stale: CanvasText;
+  }
+}

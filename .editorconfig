@@ -1,0 +1,15 @@
+# EditorConfig — https://editorconfig.org
+# Matches .prettierrc (printWidth 120, 2-space indent) and LF line endings.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Markdown: two trailing spaces are a meaningful hard line break, so do not strip them.
+[*.md]
+trim_trailing_whitespace = false

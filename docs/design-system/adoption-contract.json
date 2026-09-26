@@ -1,0 +1,53 @@
+{
+  "_note": "Standalone extract: only the Caring Contacts entries of PsychSift docs/design-system/adoption-contract.json.",
+  "productionSurfaces": [
+    {
+      "id": "caring-contacts-workspace",
+      "disposition": "owned",
+      "routes": [
+        "src/app/caring-contacts/page.tsx",
+        "src/app/caring-contacts/patients/page.tsx",
+        "src/app/caring-contacts/patients/[patientId]/page.tsx",
+        "src/app/caring-contacts/plans/new/page.tsx",
+        "src/app/caring-contacts/schedule/page.tsx",
+        "src/app/caring-contacts/templates/page.tsx",
+        "src/app/caring-contacts/templates/[pathwayId]/page.tsx",
+        "src/app/caring-contacts/guidance/page.tsx",
+        "src/app/caring-contacts/reports/page.tsx",
+        "src/app/caring-contacts/team/page.tsx",
+        "src/app/caring-contacts/intake/page.tsx"
+      ],
+      "routeRoots": true,
+      "roots": [],
+      "permittedComponentFamilies": [],
+      "expectedShellState": "v2",
+      "proof": {
+        "dark": {
+          "status": "passed",
+          "evidence": ["tests/ui-caring-contacts-workspace.spec.ts"]
+        },
+        "forcedColours": {
+          "status": "passed",
+          "evidence": ["tests/ui-caring-contacts-workspace.spec.ts"]
+        },
+        "compact320": {
+          "status": "passed",
+          "evidence": ["tests/ui-caring-contacts-workspace.spec.ts"]
+        },
+        "print": {
+          "status": "passed",
+          "evidence": ["tests/ui-caring-contacts-workspace.spec.ts"]
+        },
+        "browser": {
+          "status": "passed",
+          "evidence": ["tests/ui-caring-contacts-workspace.spec.ts"]
+        }
+      },
+      "baseline": {
+        "status": "not-committed",
+        "files": []
+      },
+      "sanctionedSpecialPatterns": ["CaringContactsShell"]
+    }
+  ]
+}

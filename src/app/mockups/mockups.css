@@ -1,0 +1,8 @@
+/* Route-scoped utility sheet for the Caring Contacts design prototypes (trimmed from
+   PsychSift's src/app/mockups/mockups.css to the Caring Contacts entries only). */
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@reference "../globals.css";
+@source "./";
+@source "../";
+@source "../../components";
+@source "../../components/caring-contacts/mockups";

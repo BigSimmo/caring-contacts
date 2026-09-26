@@ -1,0 +1,56 @@
+{
+  "name": "caring-contacts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Caring Contacts: a synthetic prototype of a suicide-prevention aftercare contact workspace, originally built inside PsychSift. Not for real patients.",
+  "engines": {
+    "node": ">=24.15.0 <25",
+    "npm": "11.x"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "node scripts/run-vitest.mjs run",
+    "test:watch": "node scripts/run-vitest.mjs",
+    "test:e2e": "node scripts/run-browser-tests.mjs",
+    "caring-contacts:db:test": "node caring-contacts/run-db-tests.mjs",
+    "sender": "node scripts/caring-contacts-sender.mjs",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm test"
+  },
+  "dependencies": {
+    "jose": "^6.2.12",
+    "lucide-react": "^1.45.0",
+    "next": "^16.3.5",
+    "pg": "^8.23.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "server-only": "^0.0.1",
+    "tailwind-merge": "^3.7.0",
+    "zod": "^4.6.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/node": "^26.5.1",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.6",
+    "jsdom": "^30.0.1",
+    "playwright": "^1.63.0",
+    "postcss": "^8.5.23",
+    "prettier": "^3.9.9",
+    "tailwindcss": "^4.3.1",
+    "typescript": "^6.0.0",
+    "vitest": "^5.0.0"
+  }
+}

@@ -1,0 +1,10 @@
+node_modules/
+.next/
+.next-playwright/
+.cache/
+coverage/
+test-results/
+playwright-report/
+package-lock.json
+# Screenshots and their manifest are generated evidence.
+docs/caring-contacts/atlas/

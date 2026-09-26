@@ -1,0 +1,96 @@
+# syntax=docker/dockerfile:1
+# Caring Contacts Sovereign Australian App Tier (Next.js 16 on Node 24).
+# Resolution for Hazard H-36 (Issue #NCAWAF, ULID: 01M0B6WFEPNCAWAFRW03H3WSDY).
+# See docs/deployment/caring-contacts-sovereign-australia.md.
+#
+# Constraints & Hardening:
+# 1. Pinned to Node 24 on Debian Bookworm Slim with multi-platform digest.
+# 2. Hardened unprivileged execution under user `nextjs` (UID 1001, GID 1001).
+# 3. Sovereign Australian runtime defaults:
+#    - CARING_CONTACTS_REGION=ap-southeast-2 (Sydney)
+#    - ZERO_DATA_EGRESS_AUSTRALIA=true (No offshore AI/LLM or data processing)
+# 4. Deep healthcheck wired to /api/caring-contacts/ready (sovereign store probe).
+#
+# Standalone extract: adapted from PsychSift's copy so it builds this folder on its own. Removed the
+# PsychSift-only install scripts, .npmrc, Supabase and upload build settings, and the runtime copies of
+# PsychSift files (public/, Sentry, Supabase project, therapy catalogue). Test-built and smoke-run
+# locally with Docker (see deploy/australia/README.md section 3).
+
+FROM node:24-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7 AS node-base
+
+# Stage 1: Dependency installation with lockfile validation
+FROM node-base AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN for attempt in 1 2 3; do \
+      npm ci --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 && break; \
+      if [ "$attempt" -eq 3 ]; then exit 1; fi; \
+      sleep $((attempt * 10)); \
+    done
+
+# Stage 2: Production compilation
+FROM node-base AS build
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Build-time argument (public variable inlined by Next.js)
+ARG NEXT_PUBLIC_CARING_CONTACTS_TRAINING_MODE=false
+ENV NEXT_PUBLIC_CARING_CONTACTS_TRAINING_MODE=${NEXT_PUBLIC_CARING_CONTACTS_TRAINING_MODE}
+
+RUN npm run build
+
+# Stage 3: Isolated production dependencies
+FROM node-base AS prod-deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN for attempt in 1 2 3; do \
+      npm ci --omit=dev --ignore-scripts --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 && break; \
+      if [ "$attempt" -eq 3 ]; then exit 1; fi; \
+      sleep $((attempt * 10)); \
+    done
+
+# Stage 4: Sovereign Hardened Runtime
+FROM node-base AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+
+# Sovereign Australian deployment guarantees
+ENV CARING_CONTACTS_REGION=ap-southeast-2
+ENV ZERO_DATA_EGRESS_AUSTRALIA=true
+
+# Create dedicated unprivileged nextjs system user and group
+RUN groupadd --system --gid 1001 nodejs && \
+    useradd --system --uid 1001 -g nodejs nextjs
+
+# Copy runtime node_modules and compiled output. Dependencies and config stay root-owned and
+# read-only to the app user; only .next (which holds Next.js's runtime cache) is owned by nextjs.
+# Ownership is set during COPY: a separate `chown -R` layer duplicated every file (~530 MB).
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=build --chown=nextjs:nodejs /app/.next ./.next
+COPY --from=build /app/src/lib/security-headers.ts ./src/lib/security-headers.ts
+COPY package.json next.config.ts ./
+
+USER nextjs
+EXPOSE 3000
+
+LABEL org.opencontainers.image.source="https://github.com/BigSimmo/Database"
+LABEL org.opencontainers.image.title="Caring Contacts Sovereign Australian App Tier"
+LABEL org.opencontainers.image.description="Hardened Next.js 16 container for sovereign Australian suicide-aftercare deployment (ap-southeast-2)"
+LABEL org.opencontainers.image.licenses="UNLICENSED"
+LABEL sovereign.region="ap-southeast-2"
+LABEL sovereign.data-residency="Australia"
+LABEL sovereign.hazard-control="H-36"
+
+STOPSIGNAL SIGTERM
+
+# Sovereign readiness: Caring Contacts store / dedicated DB (not shared Supabase-only ready)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/caring-contacts/ready').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+# Direct Next.js execution bypassing dev port wrappers
+CMD ["sh", "-c", "exec node node_modules/next/dist/bin/next start -H 0.0.0.0 -p ${PORT:-3000}"]

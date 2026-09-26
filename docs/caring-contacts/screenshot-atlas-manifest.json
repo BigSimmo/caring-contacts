@@ -1,0 +1,582 @@
+{
+  "sourceCommit": "5a6418636026a1cde9aacfe26b5f51d5129a18fa",
+  "generatedAt": "2026-08-17T23:24:23.099Z",
+  "captures": [
+    {
+      "file": "phone-01-today.png",
+      "route": "/mockups/caring-contacts",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 390,
+        "height": 2837
+      }
+    },
+    {
+      "file": "phone-02-patients.png",
+      "route": "/mockups/caring-contacts/patients",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 390,
+        "height": 1702
+      }
+    },
+    {
+      "file": "phone-03-patient-overview.png",
+      "route": "/mockups/caring-contacts/patients/SYN-PATIENT-001",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 390,
+        "height": 2062
+      }
+    },
+    {
+      "file": "phone-04-patient-agreement.png",
+      "route": "/mockups/caring-contacts/plans/new?stage=agreement",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 390,
+        "height": 2144
+      }
+    },
+    {
+      "file": "phone-05-pathway-selection.png",
+      "route": "/mockups/caring-contacts/plans/new?stage=pathway",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 390,
+        "height": 1724
+      }
+    },
+    {
+      "file": "phone-06-personalisation.png",
+      "route": "/mockups/caring-contacts/plans/new?stage=personalisation",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 390,
+        "height": 2207
+      }
+    },
+    {
+      "file": "phone-07-review-activation.png",
+      "route": "/mockups/caring-contacts/plans/new?stage=review",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 390,
+        "height": 2961
+      }
+    },
+    {
+      "file": "phone-08-plan-detail.png",
+      "route": "/mockups/caring-contacts/plans/SYN-PLAN-001",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 390,
+        "height": 2935
+      }
+    },
+    {
+      "file": "phone-09-schedule.png",
+      "route": "/mockups/caring-contacts/schedule?date=2026-08-15",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 390,
+        "height": 1524
+      }
+    },
+    {
+      "file": "phone-10-delivery-exception.png",
+      "route": "/mockups/caring-contacts/contacts/SYN-CONTACT-004",
+      "viewport": {
+        "width": 390,
+        "height": 1200
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 390,
+        "height": 1200
+      }
+    },
+    {
+      "file": "phone-11-templates.png",
+      "route": "/mockups/caring-contacts/templates",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 390,
+        "height": 1903
+      }
+    },
+    {
+      "file": "phone-12-team.png",
+      "route": "/mockups/caring-contacts/team",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 390,
+        "height": 1199
+      }
+    },
+    {
+      "file": "phone-13-guidance.png",
+      "route": "/mockups/caring-contacts/guidance",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 390,
+        "height": 1472
+      }
+    },
+    {
+      "file": "phone-14-reports.png",
+      "route": "/mockups/caring-contacts/reports",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 390,
+        "height": 1399
+      }
+    },
+    {
+      "file": "phone-overlay-pathway-preview.png",
+      "route": "/mockups/caring-contacts/plans/new?stage=pathway&overlay=pathway-preview",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "pathway-preview",
+      "dimensions": {
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "file": "phone-overlay-message-preview.png",
+      "route": "/mockups/caring-contacts/plans/new?stage=personalisation&overlay=message-preview",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "message-preview",
+      "dimensions": {
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "file": "phone-overlay-final-activation.png",
+      "route": "/mockups/caring-contacts/plans/new?stage=review&overlay=final-activation",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "final-activation",
+      "dimensions": {
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "file": "phone-overlay-withdrawal.png",
+      "route": "/mockups/caring-contacts/plans/SYN-PLAN-001?overlay=withdrawal",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "withdrawal",
+      "dimensions": {
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "file": "phone-overlay-delivery-exception.png",
+      "route": "/mockups/caring-contacts/plans/SYN-PLAN-001?overlay=delivery-detail",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "delivery-exception",
+      "dimensions": {
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "file": "phone-overlay-session-expiry.png",
+      "route": "/mockups/caring-contacts/system-states?scenario=expired-session&overlay=session-expiry",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "session-expiry",
+      "dimensions": {
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "file": "phone-overlay-offline.png",
+      "route": "/mockups/caring-contacts/system-states?scenario=offline&overlay=offline-banner",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "offline",
+      "dimensions": {
+        "width": 390,
+        "height": 167
+      }
+    },
+    {
+      "file": "phone-overlay-version-conflict.png",
+      "route": "/mockups/caring-contacts/plans/new?stage=review&scenario=version-conflict&overlay=draft-version-conflict",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scenario": "version-conflict",
+      "dimensions": {
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "file": "desktop-01-today.png",
+      "route": "/mockups/caring-contacts",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 1360,
+        "height": 1208
+      }
+    },
+    {
+      "file": "desktop-02-patients.png",
+      "route": "/mockups/caring-contacts/patients",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 1360,
+        "height": 636
+      }
+    },
+    {
+      "file": "desktop-03-patient-overview.png",
+      "route": "/mockups/caring-contacts/patients/SYN-PATIENT-001",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 1360,
+        "height": 1033
+      }
+    },
+    {
+      "file": "desktop-04-patient-agreement.png",
+      "route": "/mockups/caring-contacts/plans/new?stage=agreement",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 1360,
+        "height": 866
+      }
+    },
+    {
+      "file": "desktop-05-pathway-selection.png",
+      "route": "/mockups/caring-contacts/plans/new?stage=pathway",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 1360,
+        "height": 948
+      }
+    },
+    {
+      "file": "desktop-06-personalisation.png",
+      "route": "/mockups/caring-contacts/plans/new?stage=personalisation",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 1360,
+        "height": 1087
+      }
+    },
+    {
+      "file": "desktop-07-review-activation.png",
+      "route": "/mockups/caring-contacts/plans/new?stage=review",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 1360,
+        "height": 1843
+      }
+    },
+    {
+      "file": "desktop-08-plan-detail.png",
+      "route": "/mockups/caring-contacts/plans/SYN-PLAN-001",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 1360,
+        "height": 1535
+      }
+    },
+    {
+      "file": "desktop-09-schedule.png",
+      "route": "/mockups/caring-contacts/schedule?date=2026-08-15",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 1360,
+        "height": 844
+      }
+    },
+    {
+      "file": "desktop-10-delivery-exception.png",
+      "route": "/mockups/caring-contacts/contacts/SYN-CONTACT-004",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 544,
+        "height": 1000
+      }
+    },
+    {
+      "file": "desktop-11-templates.png",
+      "route": "/mockups/caring-contacts/templates",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 1360,
+        "height": 864
+      }
+    },
+    {
+      "file": "desktop-12-team.png",
+      "route": "/mockups/caring-contacts/team",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 1360,
+        "height": 607
+      }
+    },
+    {
+      "file": "desktop-13-guidance.png",
+      "route": "/mockups/caring-contacts/guidance",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 1360,
+        "height": 724
+      }
+    },
+    {
+      "file": "desktop-14-reports.png",
+      "route": "/mockups/caring-contacts/reports",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "normal",
+      "dimensions": {
+        "width": 1360,
+        "height": 686
+      }
+    },
+    {
+      "file": "desktop-overlay-pathway-preview.png",
+      "route": "/mockups/caring-contacts/plans/new?stage=pathway&overlay=pathway-preview",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "pathway-preview",
+      "dimensions": {
+        "width": 512,
+        "height": 1000
+      }
+    },
+    {
+      "file": "desktop-overlay-message-preview.png",
+      "route": "/mockups/caring-contacts/plans/new?stage=personalisation&overlay=message-preview",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "message-preview",
+      "dimensions": {
+        "width": 512,
+        "height": 1000
+      }
+    },
+    {
+      "file": "desktop-overlay-final-activation.png",
+      "route": "/mockups/caring-contacts/plans/new?stage=review&overlay=final-activation",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "final-activation",
+      "dimensions": {
+        "width": 512,
+        "height": 406
+      }
+    },
+    {
+      "file": "desktop-overlay-withdrawal.png",
+      "route": "/mockups/caring-contacts/plans/SYN-PLAN-001?overlay=withdrawal",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "withdrawal",
+      "dimensions": {
+        "width": 512,
+        "height": 406
+      }
+    },
+    {
+      "file": "desktop-overlay-delivery-exception.png",
+      "route": "/mockups/caring-contacts/plans/SYN-PLAN-001?overlay=delivery-detail",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "delivery-exception",
+      "dimensions": {
+        "width": 512,
+        "height": 1000
+      }
+    },
+    {
+      "file": "desktop-overlay-session-expiry.png",
+      "route": "/mockups/caring-contacts/system-states?scenario=expired-session&overlay=session-expiry",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "session-expiry",
+      "dimensions": {
+        "width": 512,
+        "height": 382
+      }
+    },
+    {
+      "file": "desktop-overlay-offline.png",
+      "route": "/mockups/caring-contacts/system-states?scenario=offline&overlay=offline-banner",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "offline",
+      "dimensions": {
+        "width": 717,
+        "height": 149
+      }
+    },
+    {
+      "file": "desktop-overlay-version-conflict.png",
+      "route": "/mockups/caring-contacts/plans/new?stage=review&scenario=version-conflict&overlay=draft-version-conflict",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scenario": "version-conflict",
+      "dimensions": {
+        "width": 512,
+        "height": 382
+      }
+    }
+  ],
+  "worktreeState": "captured from the task worktree; images committed with this PR",
+  "evidenceDirectory": "docs/caring-contacts/atlas",
+  "imagesCommitted": true,
+  "note": "The 44 captures listed below are committed alongside this manifest in docs/caring-contacts/atlas so the prototype can be reviewed without the capture worktree. They are rendered from synthetic prototype data only."
+}
