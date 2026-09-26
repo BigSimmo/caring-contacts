@@ -91,7 +91,15 @@ export type AccessedObjectType =
   | "notificationPreferences"
   | "trainingRecord"
   | "pathwayVersion"
-  | "serviceState";
+  | "serviceState"
+  // -- Incoming text messages (2026-09-26) ---------------------------------------------------------
+  /**
+   * A read of patients' REPLIES -- the reply-to-check items an incoming text creates
+   * (`listOpenInboundReplies`, `listInboundReplies`) and the follow-up write on one. Its own member
+   * on Ruling 46's instruction: "who read what patients texted back" is a question the trail must be
+   * able to ask on its own, not a stream mixed into the episode's.
+   */
+  | "inboundReply";
 
 export type AccessRecord = {
   actorId: ActorId;

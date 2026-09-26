@@ -46,6 +46,8 @@ const querySchema = z
         "trainingRecord",
         "pathwayVersion",
         "serviceState",
+        // Incoming text messages (2026-09-26).
+        "inboundReply",
       ])
       .optional(),
     limit: z.number().int().positive().max(500).default(100),

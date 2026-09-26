@@ -14,7 +14,11 @@ export type CaringContactRole =
  * grant tables never overlap (pinned by a test), so a system actor can never acquire a human
  * capability by having a role list extended, and a human can never fabricate a delivery receipt.
  */
-export type CaringContactSystemRole = "contactDispatcher";
+export type CaringContactSystemRole =
+  | "contactDispatcher"
+  // Incoming text messages (2026-09-26): records a patient's reply for a person to check, and
+  // pauses an active plan on an opt-out. Holds that one write and nothing else -- see below.
+  | "inboundReplyRecorder";
 
 export type CaringContactAction =
   | "viewReferral"
@@ -47,7 +51,10 @@ export type CaringContactAction =
   | "manageNotificationPreferences"
   | "enterTrainingMode"
   | "viewPatientRecord"
-  | "coverCoordinator";
+  | "coverCoordinator"
+  // Incoming text messages (2026-09-26).
+  | "recordInboundReply"
+  | "followUpInboundReply";
 
 export type Actor = { id: ActorId; teamId: TeamId; roles: readonly CaringContactRole[] };
 
@@ -96,6 +103,9 @@ const ACTION_REGISTRY: Record<CaringContactAction, true> = {
   enterTrainingMode: true,
   viewPatientRecord: true,
   coverCoordinator: true,
+  // Incoming text messages (2026-09-26).
+  recordInboundReply: true,
+  followUpInboundReply: true,
 };
 
 /**
@@ -158,6 +168,9 @@ const COORDINATOR_ACTIONS: readonly CaringContactAction[] = Object.freeze([
   "manageNotificationPreferences",
   "enterTrainingMode",
   "viewPatientRecord",
+  // Incoming text messages (2026-09-26): marking a patient's reply followed up. The roles that may
+  // read the reply (`READ_ACTIONS.inboundReply`) are exactly the roles that may close it.
+  "followUpInboundReply",
 ]);
 
 const TEAM_LEAD_ACTIONS: readonly CaringContactAction[] = Object.freeze([
@@ -186,6 +199,8 @@ const TEAM_LEAD_ACTIONS: readonly CaringContactAction[] = Object.freeze([
   "viewPatientRecord",
   "retirePathwayVersion",
   "coverCoordinator",
+  // Incoming text messages (2026-09-26).
+  "followUpInboundReply",
 ]);
 
 // Rule 6 carves triggerServiceSafetyStop out for every role, auditor included -- stopping
@@ -249,9 +264,17 @@ const CONTACT_DISPATCHER_ACTIONS: readonly CaringContactAction[] = Object.freeze
   "recordContactMissed",
 ]);
 
+// Incoming text messages (2026-09-26). Exactly one write: record a patient's reply as an item for
+// a person to check, which for an opt-out on an active plan ALSO pauses that plan in the same
+// audited write. It deliberately does not hold `pausePlan` (a human action -- the grant tables are
+// pinned disjoint), `resumePlan`, `withdrawPlan` or any cancel: software may hold a plan when a
+// patient texts STOP, and only a person may decide what happens next.
+const INBOUND_REPLY_RECORDER_ACTIONS: readonly CaringContactAction[] = Object.freeze(["recordInboundReply"]);
+
 export const SYSTEM_ROLE_ACTIONS: Readonly<Record<CaringContactSystemRole, readonly CaringContactAction[]>> =
   Object.freeze({
     contactDispatcher: CONTACT_DISPATCHER_ACTIONS,
+    inboundReplyRecorder: INBOUND_REPLY_RECORDER_ACTIONS,
   });
 
 /**

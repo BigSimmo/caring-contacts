@@ -44,6 +44,13 @@ import {
 import type { RestartApprovalSeatRoster } from "@/lib/caring-contacts/service-state";
 import { DEFAULT_RETENTION_POLICY, deidentifyEpisode, isDueForDeidentification } from "@/lib/caring-contacts/retention";
 import { FIRST_CONTACT_REASON_MAX_LENGTH } from "@/lib/caring-contacts/schedule";
+import {
+  INBOUND_REPLY_REFUSALS,
+  inboundReplyActorsForTeam,
+  inboundReplyIdFor,
+  inboundSenderKey,
+  type InboundReplyKind,
+} from "@/lib/caring-contacts/inbound-replies";
 
 const TEAM_A = teamId("TEAM-NORTH");
 
@@ -4618,6 +4625,255 @@ export function describeCaringContactRepositoryContract(label: string, factory: 
           ),
         );
         expect((await auditTrail(store)).length).toBe(before);
+      });
+    });
+    // Incoming text messages (2026-09-26). A reply from a patient's number becomes a reply-to-check
+    // on their plan; an opt-out PAUSES an active plan (never withdraws it); a person marks the reply
+    // followed up; and the automatic reply's loop guard allows one reply per number per window.
+    // -------------------------------------------------------------------------
+    describe("incoming replies", () => {
+      const NORTH_ACTORS = inboundReplyActorsForTeam(TEAM_A);
+      const SOUTH_ACTORS = inboundReplyActorsForTeam(teamId("TEAM-SOUTH"));
+      /** `PATIENT_DETAIL`'s number, as a carrier would give it. */
+      const SENDER = "+61491570156";
+      const SENDER_KEY = inboundSenderKey(SENDER, "a-test-secret-that-is-at-least-32-characters");
+      let replySequence = 0;
+
+      async function record(
+        store: CaringContactRepository,
+        plan: PlanRecord,
+        kind: InboundReplyKind,
+        options: { text?: string; key?: string; replyId?: string; actor?: CaringContactActor } = {},
+      ) {
+        replySequence += 1;
+        const replyId = options.replyId ?? inboundReplyIdFor(plan.plan.id, `carrier-${replySequence}`);
+        return store.recordInboundReply(
+          { planId: plan.plan.id, replyId, text: options.text ?? "Synthetic reply text.", kind },
+          writeContext(options.actor ?? NORTH_ACTORS.recorder, options.key ?? `inbound-${replyId}`),
+        );
+      }
+
+      it("finds the plans holding a number, in any written form, and only in the reader's own team", async () => {
+        const store = await newStore();
+        const north = await createActivePlan(store);
+        await createActivePlan(store, { actor: COORDINATOR_B });
+
+        for (const form of [SENDER, "0491 570 156", "61491570156"]) {
+          const found = await store.findPlansForInboundNumber(form, { actor: NORTH_ACTORS.reader });
+          expect(found.map((match) => match.planId)).toEqual([north.plan.id]);
+          expect(found[0]).toMatchObject({ patientId: north.patientId, planState: "active" });
+        }
+        expect(await store.findPlansForInboundNumber("+61491570157", { actor: NORTH_ACTORS.reader })).toEqual([]);
+        expect(await store.findPlansForInboundNumber("not a number", { actor: NORTH_ACTORS.reader })).toEqual([]);
+        // A role that may not read a patient's record learns nothing, not even that a plan matched.
+        expect(await store.findPlansForInboundNumber(SENDER, { actor: AUDITOR_A })).toEqual([]);
+        expect(await store.findPlansForInboundNumber(SENDER, { actor: ROLELESS_A })).toEqual([]);
+      });
+
+      it("files a plain reply without touching the plan, and releases the words only to the plan read", async () => {
+        const store = await newStore();
+        const plan = await createActivePlan(store);
+        const recorded = unwrap(await record(store, plan, "reply", { text: "Thanks, doing ok." }));
+
+        expect(recorded).toMatchObject({ planId: plan.plan.id, kind: "reply", planPaused: false, version: 1 });
+        expect(recorded.followedUpAt).toBeNull();
+        expect(recorded).not.toHaveProperty("text");
+        expect((await store.getPlan(plan.plan.id, { actor: COORDINATOR_A }))?.plan.state).toBe("active");
+
+        const open = await store.listOpenInboundReplies({ actor: COORDINATOR_A });
+        expect(open.map((reply) => reply.id)).toEqual([recorded.id]);
+        expect(open[0]).not.toHaveProperty("text");
+        const withText = await store.listInboundReplies(plan.plan.id, { actor: COORDINATOR_A });
+        expect(withText.map((reply) => reply.text)).toEqual(["Thanks, doing ok."]);
+      });
+
+      it("PAUSES an active plan on an opt-out, and never withdraws or cancels it", async () => {
+        const store = await newStore();
+        const plan = await createActivePlan(store);
+        const recorded = unwrap(await record(store, plan, "optOutRequest", { text: "STOP" }));
+
+        expect(recorded).toMatchObject({ kind: "optOutRequest", planPaused: true });
+        const after = await store.getPlan(plan.plan.id, { actor: COORDINATOR_A });
+        expect(after?.plan.state).toBe("paused");
+        expect(after?.plan.version).toBe(plan.plan.version + 1);
+        // No contact was cancelled: a pause holds the schedule for a person to decide.
+        expect(after?.contacts.map((entry) => entry.contact.state)).toEqual(
+          plan.contacts.map((entry) => entry.contact.state),
+        );
+        const trail = await auditTrail(store);
+        expect(trail.map((event) => event.action)).toContain("recordInboundReply:optOutRequest");
+        expect(JSON.stringify(trail)).not.toMatch(/491\s?570|STOP/);
+      });
+
+      it("files an opt-out on a plan that is not running without changing it", async () => {
+        const store = await newStore();
+        const plan = await createActivePlan(store);
+        const paused = unwrap(
+          await store.pausePlan(
+            { planId: plan.plan.id, expectedVersion: plan.plan.version },
+            writeContext(COORDINATOR_A, `inbound-pause-${plan.plan.id}`),
+          ),
+        );
+        const recorded = unwrap(await record(store, plan, "optOutRequest"));
+        expect(recorded.planPaused).toBe(false);
+        expect((await store.getPlan(plan.plan.id, { actor: COORDINATOR_A }))?.plan.version).toBe(paused.plan.version);
+      });
+
+      it("pauses EVERY plan holding the number, one reply item per plan, during a safety stop too", async () => {
+        const store = await newStore();
+        const first = await createActivePlan(store);
+        const second = await createActivePlan(store);
+        unwrap(
+          await store.stopService(
+            { reason: "wrong-recipient", note: "n/a" },
+            writeContext(COORDINATOR_A, "inbound-stop"),
+          ),
+        );
+
+        const matches = await store.findPlansForInboundNumber(SENDER, { actor: NORTH_ACTORS.reader });
+        expect(matches.map((match) => match.planId).sort()).toEqual([first.plan.id, second.plan.id].sort());
+        for (const plan of [first, second]) {
+          expect(unwrap(await record(store, plan, "optOutRequest")).planPaused).toBe(true);
+          expect((await store.getPlan(plan.plan.id, { actor: COORDINATOR_A }))?.plan.state).toBe("paused");
+        }
+        expect(await store.listOpenInboundReplies({ actor: COORDINATOR_A })).toHaveLength(2);
+      });
+
+      it("replays a retried delivery and refuses a second write claiming the same reply id", async () => {
+        const store = await newStore();
+        const plan = await createActivePlan(store);
+        const replyId = inboundReplyIdFor(plan.plan.id, "carrier-retry");
+        const first = await record(store, plan, "optOutRequest", { replyId });
+        const replay = await record(store, plan, "optOutRequest", { replyId });
+        expect(replay).toEqual(first);
+        const clash = await record(store, plan, "optOutRequest", { replyId, key: "a-different-key" });
+        expect(clash).toEqual({ ok: false, reason: INBOUND_REPLY_REFUSALS.alreadyRecorded });
+        expect(await store.listOpenInboundReplies({ actor: COORDINATOR_A })).toHaveLength(1);
+      });
+
+      it("records only as the recorder system role, only in its own team, and only a well-formed reply", async () => {
+        const store = await newStore();
+        const plan = await createActivePlan(store);
+        expect(await record(store, plan, "reply", { actor: COORDINATOR_A })).toEqual({
+          ok: false,
+          reason: REPOSITORY_REFUSALS.permissionDenied,
+        });
+        expect(await record(store, plan, "reply", { actor: DISPATCHER_A })).toEqual({
+          ok: false,
+          reason: REPOSITORY_REFUSALS.permissionDenied,
+        });
+        expect(await record(store, plan, "optOutRequest", { actor: SOUTH_ACTORS.recorder })).toEqual({
+          ok: false,
+          reason: REPOSITORY_REFUSALS.notFound,
+        });
+        expect(await record(store, plan, "reply", { text: "   " })).toEqual({
+          ok: false,
+          reason: INBOUND_REPLY_REFUSALS.invalidReply,
+        });
+        expect(await record(store, plan, "reply", { replyId: "not-a-reply-id" })).toEqual({
+          ok: false,
+          reason: INBOUND_REPLY_REFUSALS.invalidReply,
+        });
+        // An id shaped like a mobile number never reaches storage: the audit event refuses it first,
+        // as it does for every write (the API boundary answers that with a 400).
+        await expect(record(store, plan, "reply", { replyId: "0412345678" })).rejects.toThrow(
+          AuditEventContainsPatientDataError,
+        );
+        expect((await store.getPlan(plan.plan.id, { actor: COORDINATOR_A }))?.plan.state).toBe("active");
+        expect(await store.listOpenInboundReplies({ actor: COORDINATOR_A })).toEqual([]);
+      });
+
+      it("lets a person mark a reply followed up once, on the version they saw", async () => {
+        const store = await newStore();
+        const plan = await createActivePlan(store);
+        const recorded = unwrap(await record(store, plan, "reply"));
+        const followUp = (actor: CaringContactActor, expectedVersion: number, key: string) =>
+          store.markInboundReplyFollowedUp(
+            { planId: plan.plan.id, replyId: recorded.id, expectedVersion },
+            writeContext(actor, key),
+          );
+
+        expect(await followUp(AUDITOR_A, 1, "fu-auditor")).toEqual({
+          ok: false,
+          reason: REPOSITORY_REFUSALS.permissionDenied,
+        });
+        expect(await followUp(NORTH_ACTORS.recorder, 1, "fu-recorder")).toEqual({
+          ok: false,
+          reason: REPOSITORY_REFUSALS.permissionDenied,
+        });
+        expect(await followUp(COORDINATOR_B, 1, "fu-south")).toEqual({
+          ok: false,
+          reason: REPOSITORY_REFUSALS.notFound,
+        });
+
+        const followed = unwrap(await followUp(COORDINATOR_A, 1, "fu-first"));
+        expect(followed).toMatchObject({ id: recorded.id, followedUpBy: COORDINATOR_A.id, version: 2 });
+        expect(followed.followedUpAt).toEqual(new Date(NOW));
+        expect(await followUp(TEAM_LEAD_A, 1, "fu-stale")).toEqual({
+          ok: false,
+          reason: REPOSITORY_REFUSALS.staleVersion,
+        });
+        expect(await followUp(TEAM_LEAD_A, 2, "fu-again")).toEqual({
+          ok: false,
+          reason: INBOUND_REPLY_REFUSALS.alreadyFollowedUp,
+        });
+        expect(await store.listOpenInboundReplies({ actor: COORDINATOR_A })).toEqual([]);
+        const kept = await store.listInboundReplies(plan.plan.id, { actor: COORDINATOR_A });
+        expect(kept.map((reply) => reply.followedUpBy)).toEqual([COORDINATOR_A.id]);
+      });
+
+      it("releases replies to no one outside the team or without the patient-record read", async () => {
+        const store = await newStore();
+        const plan = await createActivePlan(store);
+        unwrap(await record(store, plan, "reply"));
+        expect(await store.listOpenInboundReplies({ actor: TEAM_LEAD_A })).toHaveLength(1);
+        for (const actor of [AUDITOR_A, ROLELESS_A, COORDINATOR_B]) {
+          expect(await store.listOpenInboundReplies({ actor })).toEqual([]);
+          expect(await store.listInboundReplies(plan.plan.id, { actor })).toEqual([]);
+        }
+      });
+
+      it("clears a reply's words with the rest of the patient detail", async () => {
+        const store = await newStore();
+        const plan = await createActivePlan(store);
+        unwrap(await record(store, plan, "reply", { text: "Please call my sister Anne." }));
+        unwrap(
+          await store.withdrawPlan(
+            { planId: plan.plan.id, expectedVersion: plan.plan.version, origin: "patient" },
+            writeContext(COORDINATOR_A, `inbound-withdraw-${plan.plan.id}`),
+          ),
+        );
+        passRetentionPeriod();
+        unwrap(
+          await store.markRetentionCleared({ planId: plan.plan.id }, writeContext(COORDINATOR_A, "inbound-clear")),
+        );
+        const after = await store.listInboundReplies(plan.plan.id, { actor: COORDINATOR_A });
+        expect(after).toHaveLength(1);
+        expect(after[0].text).toBe("");
+      });
+
+      it("allows one automatic reply per sender in the window, and another once it has passed", async () => {
+        const store = await newStore();
+        const window = 24 * 60 * 60 * 1000;
+        expect(await store.claimInboundAutoReply({ senderKey: SENDER_KEY, windowMs: window })).toBe(true);
+        expect(await store.claimInboundAutoReply({ senderKey: SENDER_KEY, windowMs: window })).toBe(false);
+        const other = inboundSenderKey("+61491570157", "a-test-secret-that-is-at-least-32-characters");
+        expect(await store.claimInboundAutoReply({ senderKey: other, windowMs: window })).toBe(true);
+
+        clockInstant = "2026-03-03T03:00:00.001Z";
+        expect(await store.claimInboundAutoReply({ senderKey: SENDER_KEY, windowMs: window })).toBe(true);
+        expect(await store.claimInboundAutoReply({ senderKey: SENDER_KEY, windowMs: window })).toBe(false);
+
+        // Two claims at once: exactly one wins.
+        clockInstant = "2026-03-05T03:00:00.000Z";
+        const raced = await Promise.all([
+          store.claimInboundAutoReply({ senderKey: SENDER_KEY, windowMs: window }),
+          store.claimInboundAutoReply({ senderKey: SENDER_KEY, windowMs: window }),
+        ]);
+        expect(raced.filter(Boolean)).toHaveLength(1);
+
+        await expect(store.claimInboundAutoReply({ senderKey: SENDER, windowMs: window })).rejects.toThrow();
+        await expect(store.claimInboundAutoReply({ senderKey: SENDER_KEY, windowMs: 0 })).rejects.toThrow();
       });
     });
   });

@@ -67,6 +67,14 @@ import { createPlansStore, type PlansStore } from "./modules/plans-store";
 import { createResponderNotesStore, type ResponderNotesStore } from "./modules/responder-notes-store";
 import { createTeamStore, type TeamStore } from "./modules/team-store";
 import { createStaffAlertsStore, type StaffAlertsStore } from "./modules/staff-alerts-store";
+import { createInboundRepliesStore, type InboundRepliesStore } from "./modules/inbound-replies-store";
+import type {
+  FollowUpInboundReplyInput,
+  InboundReplyPlanMatch,
+  InboundReplyRecord,
+  InboundReplyWithText,
+  RecordInboundReplyInput,
+} from "../inbound-replies";
 import {
   auditTokenFactory,
   decodeStoredValue,
@@ -269,6 +277,7 @@ export class PostgresCaringContactsRepository implements CaringContactRepository
   private readonly teamStore: TeamStore;
   // Staff alerts and sender heartbeat (feature: staff alert delivery).
   private readonly staffAlertsStore: StaffAlertsStore;
+  private readonly inboundRepliesStore: InboundRepliesStore;
 
   constructor(pool: SqlConnectionPool, clock: Clock, options: RepositoryOptions = {}) {
     this.ctx = createPostgresRepositoryContext(pool, clock, options);
@@ -278,6 +287,7 @@ export class PostgresCaringContactsRepository implements CaringContactRepository
     this.auditStore = createAuditStore(this.ctx);
     this.teamStore = createTeamStore(this.ctx);
     this.staffAlertsStore = createStaffAlertsStore(this.ctx);
+    this.inboundRepliesStore = createInboundRepliesStore(this.ctx);
 
     // Wire pluggable cross-module delegates
     this.ctx.readServiceState = (conn, forUpdate) => this.responderNotesStore.readServiceState(conn, forUpdate);
@@ -530,6 +540,38 @@ export class PostgresCaringContactsRepository implements CaringContactRepository
 
   releaseStaffAlert(input: StaffAlertReleaseInput, context: ReadContext): Promise<TransitionResult<void>> {
     return this.staffAlertsStore.releaseStaffAlert(input, context);
+  }
+  // Incoming text messages (2026-09-26)
+  // ---------------------------------------------------------------------------
+
+  findPlansForInboundNumber(mobileE164: string, context: ReadContext): Promise<InboundReplyPlanMatch[]> {
+    return this.inboundRepliesStore.findPlansForInboundNumber(mobileE164, context);
+  }
+
+  recordInboundReply(
+    input: RecordInboundReplyInput,
+    context: WriteContext,
+  ): Promise<TransitionResult<InboundReplyRecord>> {
+    return this.inboundRepliesStore.recordInboundReply(input, context);
+  }
+
+  markInboundReplyFollowedUp(
+    input: FollowUpInboundReplyInput,
+    context: WriteContext,
+  ): Promise<TransitionResult<InboundReplyRecord>> {
+    return this.inboundRepliesStore.markInboundReplyFollowedUp(input, context);
+  }
+
+  listOpenInboundReplies(context: ReadContext): Promise<InboundReplyRecord[]> {
+    return this.inboundRepliesStore.listOpenInboundReplies(context);
+  }
+
+  listInboundReplies(planId: PlanId, context: ReadContext): Promise<InboundReplyWithText[]> {
+    return this.inboundRepliesStore.listInboundReplies(planId, context);
+  }
+
+  claimInboundAutoReply(input: { senderKey: string; windowMs: number }): Promise<boolean> {
+    return this.inboundRepliesStore.claimInboundAutoReply(input);
   }
 }
 

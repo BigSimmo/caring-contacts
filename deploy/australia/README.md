@@ -339,6 +339,13 @@ How it works, in short:
   own signed address, so a forged report is refused. Receipts update the contact to delivered or
   not delivered. If no report arrives within a day, the contact is marked "status unavailable" for
   a person to check.
+- **Replies to the service's number** come in at `/api/caring-contacts/inbound/webhook` (only once
+  `CARING_CONTACTS_INBOUND_WEBHOOK_SECRET` is set). Every sender gets one fixed automatic reply naming
+  000, Lifeline and the Mental Health Emergency Response Line, at most once a day per number. A reply
+  from a number on a patient's plan appears on the Today screen and the patient's page as a "reply
+  to check". STOP and similar words **pause** the plan for a person to review; nothing is withdrawn
+  automatically. How Telstra delivers incoming messages has **not** been confirmed and must be
+  checked with a staff phone (step 9) before patient use.
 
 ### What the owner needs to do
 
@@ -379,6 +386,7 @@ How it works, in short:
    | `CARING_CONTACTS_PUBLIC_BASE_URL`         | This service's public https address, e.g. `https://caringcontacts.health.wa.gov.au` |
    | `CARING_CONTACTS_DELIVERY_WEBHOOK_SECRET` | The delivery-report secret from step 5 (at least 32 characters)                     |
    | `CARING_CONTACTS_SENDER_SECRET`           | The sender secret from step 5 (at least 32 characters)                              |
+   | `CARING_CONTACTS_INBOUND_WEBHOOK_SECRET`  | A third secret (`openssl rand -hex 32`) the carrier sends with each incoming text   |
    | `CARING_CONTACTS_SENDER_TEAM_IDS`         | The team ids the sender works for, comma-separated, e.g. `team-north`               |
 
    Real sending also requires live mode (`CARING_CONTACTS_DEMO_ENABLED=false` with staff sign-in and

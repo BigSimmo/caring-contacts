@@ -913,6 +913,15 @@ export class PlansStore {
           ],
         );
 
+        // Incoming text messages (migration 0021): the patient's own words in every reply filed
+        // against this plan. The item stays; the words go.
+        await connection.query(
+          `update caring_contacts.inbound_replies
+              set body = $3
+            where plan_id = $1 and team_id = $2`,
+          [input.planId, team, CLEARED_PATIENT_FREE_TEXT.inboundReplyText],
+        );
+
         // H-44 intake clinical sidecar on the linked referral (migration 0010_referral_intake_payload).
         // Null the jsonb in this transaction so a clearance record cannot coexist with a readable intake payload.
         await connection.query(
