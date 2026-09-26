@@ -89,6 +89,13 @@ import {
   admitPlanAssurances,
   contactIdentifierFor,
   isTerminalPlan,
+  mayReadTeamAlertOptIns,
+  mayWriteOperationalRecord,
+  unionOfAlertOptIns,
+  type SenderHeartbeat,
+  type StaffAlertClaim,
+  type StaffAlertClaimInput,
+  type StaffAlertReleaseInput,
   outcomeFor,
   replayRecordPlanId,
   type AccessTrailQuery,
@@ -121,6 +128,17 @@ import {
 import type { PlanAssuranceAttestation } from "./assurances";
 import { ValidationError, type Episode } from "./episode";
 import { buildApprovedSchedule, type PlannedContact } from "./schedule";
+import {
+  admitRecordInboundReplyInput,
+  applyInboundReplyFollowUp,
+  optOutPausesPlan,
+  INBOUND_REPLY_REFUSALS,
+  INBOUND_SENDER_KEY_PATTERN,
+  type FollowUpInboundReplyInput,
+  type InboundReplyRecord,
+  type InboundReplyWithText,
+  type RecordInboundReplyInput,
+} from "./inbound-replies";
 import { toAustralianMobileE164 } from "./transport/phone";
 
 type StagedWrite<T> = {
@@ -322,6 +340,13 @@ export function createInMemoryRepository(clock: Clock, options: RepositoryOption
    */
   const retentionCleared = new Map<string, { terminalAt: Date; clearedAt: Date }>();
 
+  // Staff alerts and sender heartbeat (feature: staff alert delivery). The in-memory twins of
+  // migration 0020's two tables: one service-wide heartbeat instant, and the instant each
+  // (scope, alert class) alert was last delivered.
+  let senderLastRunAt: Date | null = null;
+  const staffAlertDeliveries = new Map<string, Date>();
+  const staffAlertKey = (scope: string, alertClass: string) => `${scope}::${alertClass}`;
+
   /**
    * The one service-wide safety-stop record (Ruling 3: never one per team). `reportedByTeamId` on
    * the running state is bookkeeping only -- overwritten with the reporting team the moment a stop
@@ -329,6 +354,11 @@ export function createInMemoryRepository(clock: Clock, options: RepositoryOption
    * cannot be mistaken for one that has ever recorded an incident.
    */
   let serviceState: ServiceState = runningService(SERVICE_STATE_UNSET_TEAM);
+
+  // Incoming text messages (2026-09-26): the twins of `caring_contacts.inbound_replies` and
+  // `caring_contacts.inbound_auto_reply_limits` (migration 0021).
+  const inboundReplies = new Map<string, InboundReplyWithText>();
+  const autoReplyClaims = new Map<string, Date>();
 
   // Serialises writes so two calls issued at once cannot interleave between reading a version and
   // committing the next one. This is what `UPDATE ... WHERE version = $expected` gives the
@@ -1636,6 +1666,13 @@ export function createInMemoryRepository(clock: Clock, options: RepositoryOption
                 // outside the plan row. A clearance that left them would report the episode de-identified
                 // while getReferralIntakePayload still released full clinical PHI.
                 referralIntakePayloads.delete(stored.referralId);
+                // Incoming text messages (2026-09-26): the patient's own words in every reply
+                // filed against this plan. The item stays; the words go.
+                for (const [id, reply] of inboundReplies) {
+                  if (reply.planId === input.planId) {
+                    inboundReplies.set(id, { ...reply, text: CLEARED_PATIENT_FREE_TEXT.inboundReplyText });
+                  }
+                }
                 retentionCleared.set(input.planId, { terminalAt: admitted.value, clearedAt });
               },
             },
@@ -1748,5 +1785,218 @@ export function createInMemoryRepository(clock: Clock, options: RepositoryOption
         },
       };
     },
+
+    // ---------------------------------------------------------------------
+    // Staff alerts and sender heartbeat (feature: staff alert delivery)
+    // ---------------------------------------------------------------------
+
+    async listTeamAlertOptIns(context: ReadContext) {
+      if (!mayReadTeamAlertOptIns(context.actor)) return [];
+      const prefix = `${context.actor.teamId}::`;
+      const lists = [...notificationPreferences.entries()]
+        .filter(([key]) => key.startsWith(prefix))
+        .map(([, preferences]) => preferences.optedIn);
+      return unionOfAlertOptIns(lists);
+    },
+
+    async recordSenderHeartbeat(input: { at: Date }, context: ReadContext): Promise<TransitionResult<SenderHeartbeat>> {
+      if (!mayWriteOperationalRecord(context.actor)) {
+        return { ok: false, reason: REPOSITORY_REFUSALS.permissionDenied };
+      }
+      if (senderLastRunAt === null || input.at.getTime() > senderLastRunAt.getTime()) {
+        senderLastRunAt = new Date(input.at.getTime());
+      }
+      return { ok: true, value: { lastRunAt: new Date(senderLastRunAt.getTime()) } };
+    },
+
+    async getSenderHeartbeat() {
+      return senderLastRunAt === null ? null : { lastRunAt: new Date(senderLastRunAt.getTime()) };
+    },
+
+    async claimStaffAlert(
+      input: StaffAlertClaimInput,
+      context: ReadContext,
+    ): Promise<TransitionResult<StaffAlertClaim>> {
+      if (!mayWriteOperationalRecord(context.actor)) {
+        return { ok: false, reason: REPOSITORY_REFUSALS.permissionDenied };
+      }
+      const key = staffAlertKey(input.scope, input.alertClass);
+      const last = staffAlertDeliveries.get(key);
+      if (last !== undefined && last.getTime() > input.at.getTime() - input.cooldownMs) {
+        return { ok: true, value: "coolingDown" };
+      }
+      staffAlertDeliveries.set(key, new Date(input.at.getTime()));
+      return { ok: true, value: "claimed" };
+    },
+
+    async releaseStaffAlert(input: StaffAlertReleaseInput, context: ReadContext): Promise<TransitionResult<void>> {
+      if (!mayWriteOperationalRecord(context.actor)) {
+        return { ok: false, reason: REPOSITORY_REFUSALS.permissionDenied };
+      }
+      const key = staffAlertKey(input.scope, input.alertClass);
+      if (staffAlertDeliveries.get(key)?.getTime() === input.at.getTime()) staffAlertDeliveries.delete(key);
+      return { ok: true, value: undefined };
+    },
+    // -------------------------------------------------------------------------------------------
+    // Incoming text messages (2026-09-26). The rules are ./inbound-replies'; this is storage.
+    // -------------------------------------------------------------------------------------------
+
+    async findPlansForInboundNumber(mobileE164: string, context: ReadContext) {
+      const wanted = toAustralianMobileE164(mobileE164);
+      if (wanted === null) return [];
+      return [...plans.values()]
+        .filter((stored) => stored.plan.teamId === context.actor.teamId)
+        .filter((stored) => mayRead(context.actor, READ_ACTIONS.inboundReply, stored.plan.teamId))
+        .filter((stored) => toAustralianMobileE164(stored.patientDetail.patientMobileNumber) === wanted)
+        .map((stored) => ({
+          planId: stored.plan.id,
+          patientId: stored.patientId,
+          planState: stored.plan.state,
+          createdAt: new Date(stored.createdAt.getTime()),
+        }));
+    },
+
+    async recordInboundReply(input: RecordInboundReplyInput, context: WriteContext) {
+      return runWrite<InboundReplyRecord>({
+        method: "recordInboundReply",
+        input,
+        context,
+        auditAction: `recordInboundReply:${input.kind}`,
+        objectType: "inboundReply",
+        objectId: input.replyId,
+        // A patient's reply, above all an opt-out, must be recordable during a safety stop -- see
+        // the contract. The pause it may carry only ever reduces what is sent.
+        bypassServiceStopGate: true,
+        stage: () => {
+          const admitted = admitRecordInboundReplyInput(input);
+          if (!admitted.ok) return admitted;
+          const stored = plans.get(input.planId);
+          if (!stored || stored.plan.teamId !== context.actor.teamId) {
+            return { ok: false, reason: REPOSITORY_REFUSALS.notFound };
+          }
+          if (
+            !canPerformCaringContactAction(context.actor, "recordInboundReply", { teamId: stored.plan.teamId }).allowed
+          ) {
+            return { ok: false, reason: REPOSITORY_REFUSALS.permissionDenied };
+          }
+          if (inboundReplies.has(input.replyId)) {
+            return { ok: false, reason: INBOUND_REPLY_REFUSALS.alreadyRecorded };
+          }
+
+          let nextPlan: StoredPlan | null = null;
+          if (optOutPausesPlan(input.kind, stored.plan.state)) {
+            const moved = applyPlanTransition(stored.plan, { type: "pause" });
+            if (!moved.ok) return moved;
+            nextPlan = withPlan(stored, moved.value);
+          }
+          const reply: InboundReplyWithText = {
+            id: input.replyId,
+            planId: stored.plan.id,
+            patientId: stored.patientId,
+            teamId: stored.plan.teamId,
+            kind: input.kind,
+            receivedAt: clock.now(),
+            planPaused: nextPlan !== null,
+            followedUpAt: null,
+            followedUpBy: null,
+            version: 1,
+            text: input.text,
+          };
+          return {
+            ok: true,
+            value: {
+              value: inboundReplyRecordOf(reply),
+              commit: () => {
+                if (nextPlan !== null) plans.set(nextPlan.plan.id, nextPlan);
+                inboundReplies.set(reply.id, reply);
+              },
+            },
+          };
+        },
+      });
+    },
+
+    async markInboundReplyFollowedUp(input: FollowUpInboundReplyInput, context: WriteContext) {
+      return runWrite<InboundReplyRecord>({
+        method: "markInboundReplyFollowedUp",
+        input,
+        context,
+        auditAction: "markInboundReplyFollowedUp",
+        objectType: "inboundReply",
+        objectId: input.replyId,
+        stage: () => {
+          const reply = inboundReplies.get(input.replyId);
+          if (!reply || reply.teamId !== context.actor.teamId || reply.planId !== input.planId) {
+            return { ok: false, reason: REPOSITORY_REFUSALS.notFound };
+          }
+          if (!canPerformCaringContactAction(context.actor, "followUpInboundReply", { teamId: reply.teamId }).allowed) {
+            return { ok: false, reason: REPOSITORY_REFUSALS.permissionDenied };
+          }
+          if (reply.version !== input.expectedVersion) return { ok: false, reason: REPOSITORY_REFUSALS.staleVersion };
+          const followed = applyInboundReplyFollowUp(inboundReplyRecordOf(reply), context.actor.id, clock.now());
+          if (!followed.ok) return followed;
+          const next: InboundReplyWithText = { ...reply, ...followed.value, text: reply.text };
+          return {
+            ok: true,
+            value: { value: inboundReplyRecordOf(next), commit: () => inboundReplies.set(next.id, next) },
+          };
+        },
+      });
+    },
+
+    async listOpenInboundReplies(context: ReadContext) {
+      if (!mayRead(context.actor, READ_ACTIONS.inboundReply, context.actor.teamId)) return [];
+      return [...inboundReplies.values()]
+        .filter((reply) => reply.teamId === context.actor.teamId && reply.followedUpAt === null)
+        .sort(byReceivedThenId)
+        .map(inboundReplyRecordOf);
+    },
+
+    async listInboundReplies(planId: PlanId, context: ReadContext) {
+      const stored = visiblePlan(planId, context, READ_ACTIONS.inboundReply);
+      if (!stored) return [];
+      return [...inboundReplies.values()]
+        .filter((reply) => reply.planId === planId && reply.teamId === stored.plan.teamId)
+        .sort(byReceivedThenId)
+        .map((reply) => ({ ...inboundReplyRecordOf(reply), text: reply.text }));
+    },
+
+    async claimInboundAutoReply(input: { senderKey: string; windowMs: number }) {
+      if (!INBOUND_SENDER_KEY_PATTERN.test(input.senderKey) || !(input.windowMs > 0)) {
+        throw new Error("caring-contacts: an automatic-reply claim needs a sender key and a positive window");
+      }
+      return serialise(async () => {
+        const now = clock.now();
+        const cutoff = now.getTime() - input.windowMs;
+        for (const [key, at] of autoReplyClaims) {
+          if (at.getTime() <= cutoff) autoReplyClaims.delete(key);
+        }
+        if (autoReplyClaims.has(input.senderKey)) return false;
+        autoReplyClaims.set(input.senderKey, now);
+        return true;
+      });
+    },
   };
+}
+
+/** A reply as every write and list read releases it: a fresh copy, and never the words. */
+function inboundReplyRecordOf(reply: InboundReplyRecord): InboundReplyRecord {
+  return {
+    id: reply.id,
+    planId: reply.planId,
+    patientId: reply.patientId,
+    teamId: reply.teamId,
+    kind: reply.kind,
+    receivedAt: new Date(reply.receivedAt.getTime()),
+    planPaused: reply.planPaused,
+    followedUpAt: reply.followedUpAt === null ? null : new Date(reply.followedUpAt.getTime()),
+    followedUpBy: reply.followedUpBy,
+    version: reply.version,
+  };
+}
+
+function byReceivedThenId(a: InboundReplyRecord, b: InboundReplyRecord): number {
+  const delta = a.receivedAt.getTime() - b.receivedAt.getTime();
+  if (delta !== 0) return delta;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }

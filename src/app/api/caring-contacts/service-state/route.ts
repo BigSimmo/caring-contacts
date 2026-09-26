@@ -16,6 +16,7 @@ import {
   type ServiceRestartView,
   type ServiceStateView,
 } from "@/lib/caring-contacts-server/service-state-view";
+import { raiseServiceStopAlert } from "@/lib/caring-contacts-server/staff-alerts";
 import type { CaringContactAction } from "@/lib/caring-contacts/permissions";
 
 export const runtime = "nodejs";
@@ -89,6 +90,12 @@ export const POST = writeHandler<z.infer<typeof serviceStateSchema>, ServiceStat
         { reason: body.reason, note: body.note },
         writeContextFor(actor, body.idempotencyKey),
       );
+      if (stopped.ok && stopped.value.stopped) {
+        // Staff alert delivery: the always-delivered safety-stop alert, keyed to this stop's own
+        // instant so a replayed request does not alert twice. Not awaited -- raising a stop must
+        // never wait on, or fail because of, an alert channel -- and it never throws.
+        void raiseServiceStopAlert(store, stopped.value).catch(() => undefined);
+      }
       return stopped.ok ? { ok: true, value: narrowServiceStateForActor(stopped.value, actor) } : stopped;
     }
     const approved = await store.approveServiceRestart(

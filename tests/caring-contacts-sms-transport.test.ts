@@ -135,6 +135,32 @@ describe("Telstra transport against a fake server", () => {
     expect(JSON.stringify(result)).not.toContain("412345678");
   });
 
+  // A 429 is refused like any other 4xx -- not sent, not retried -- but under its OWN reason code,
+  // because it says the carrier is throttling the service rather than refusing this message. The
+  // sender stops claiming for the rest of the run on it, and it raises an operational staff alert.
+  it("reports carrier rate limiting (429) under its own reason code, from the send or the sign-in", async () => {
+    respond = (request) =>
+      request.url === "/v2/oauth/token"
+        ? { status: 200, body: { access_token: "t", expires_in: 3600 } }
+        : { status: 429, body: { error: `slow down, ${PHONE}` } };
+    const throttled = await transport().send(message);
+    expect(throttled).toEqual({ outcome: "rejected", reason: "carrier-rate-limited" });
+    expect(JSON.stringify(throttled)).not.toContain("412345678");
+
+    seen = [];
+    respond = () => ({ status: 429, body: { error: "too many token requests" } });
+    expect(await transport().send(message)).toEqual({ outcome: "rejected", reason: "carrier-rate-limited" });
+    // The sign-in was refused, so no message request was ever made.
+    expect(seen.map((request) => request.url)).toEqual(["/v2/oauth/token"]);
+
+    // Positive control: another 4xx keeps the generic code.
+    respond = (request) =>
+      request.url === "/v2/oauth/token"
+        ? { status: 200, body: { access_token: "t", expires_in: 3600 } }
+        : { status: 422, body: {} };
+    expect(await transport().send(message)).toEqual({ outcome: "rejected", reason: "carrier-refused-422" });
+  });
+
   it("reports a failed sign-in as not sent and never attempts the message", async () => {
     respond = () => ({ status: 401, body: { error: "invalid_client" } });
     expect(await transport().send(message)).toEqual({ outcome: "rejected", reason: "carrier-authentication-failed" });

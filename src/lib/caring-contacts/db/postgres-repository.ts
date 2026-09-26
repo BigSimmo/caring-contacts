@@ -20,7 +20,7 @@ import type { Episode } from "../episode";
 import { fingerprintOf } from "../fingerprint";
 import type { ContactId, PathwayVersionId, PlanId, ReferralId, TeamId } from "../ids";
 import type { Referral, TransitionResult } from "../model";
-import type { NotificationPreferences } from "../notification-preferences";
+import type { AlertClass, NotificationPreferences } from "../notification-preferences";
 import type { PathwayVersion } from "../pathway-versions";
 import { actorRoleNames } from "../permissions";
 import {
@@ -48,6 +48,10 @@ import {
   type ResolveDiscrepancyInput,
   type ResolveMobileCheckInput,
   type SavePathwayVersionInput,
+  type SenderHeartbeat,
+  type StaffAlertClaim,
+  type StaffAlertClaimInput,
+  type StaffAlertReleaseInput,
   type SharedMobileQuery,
   type StoredContact,
   type WithdrawPlanInput,
@@ -66,6 +70,15 @@ import { createContactsStore, toStoredContact, type ContactsStore } from "./modu
 import { createPlansStore, type PlansStore } from "./modules/plans-store";
 import { createResponderNotesStore, type ResponderNotesStore } from "./modules/responder-notes-store";
 import { createTeamStore, type TeamStore } from "./modules/team-store";
+import { createStaffAlertsStore, type StaffAlertsStore } from "./modules/staff-alerts-store";
+import { createInboundRepliesStore, type InboundRepliesStore } from "./modules/inbound-replies-store";
+import type {
+  FollowUpInboundReplyInput,
+  InboundReplyPlanMatch,
+  InboundReplyRecord,
+  InboundReplyWithText,
+  RecordInboundReplyInput,
+} from "../inbound-replies";
 import {
   auditTokenFactory,
   decodeStoredValue,
@@ -267,6 +280,9 @@ export class PostgresCaringContactsRepository implements CaringContactRepository
   private readonly responderNotesStore: ResponderNotesStore;
   private readonly auditStore: AuditStore;
   private readonly teamStore: TeamStore;
+  // Staff alerts and sender heartbeat (feature: staff alert delivery).
+  private readonly staffAlertsStore: StaffAlertsStore;
+  private readonly inboundRepliesStore: InboundRepliesStore;
 
   constructor(pool: SqlConnectionPool, clock: Clock, options: RepositoryOptions = {}) {
     this.ctx = createPostgresRepositoryContext(pool, clock, options);
@@ -275,6 +291,8 @@ export class PostgresCaringContactsRepository implements CaringContactRepository
     this.responderNotesStore = createResponderNotesStore(this.ctx);
     this.auditStore = createAuditStore(this.ctx);
     this.teamStore = createTeamStore(this.ctx);
+    this.staffAlertsStore = createStaffAlertsStore(this.ctx);
+    this.inboundRepliesStore = createInboundRepliesStore(this.ctx);
 
     // Wire pluggable cross-module delegates
     this.ctx.readServiceState = (conn, forUpdate) => this.responderNotesStore.readServiceState(conn, forUpdate);
@@ -522,6 +540,62 @@ export class PostgresCaringContactsRepository implements CaringContactRepository
 
   listAuditEvents(context: ReadContext): Promise<AuditEvent[]> {
     return this.auditStore.listAuditEvents(context);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Staff alerts and sender heartbeat (feature: staff alert delivery, migration 0020)
+  // ---------------------------------------------------------------------------
+
+  listTeamAlertOptIns(context: ReadContext): Promise<AlertClass[]> {
+    return this.staffAlertsStore.listTeamAlertOptIns(context);
+  }
+
+  recordSenderHeartbeat(input: { at: Date }, context: ReadContext): Promise<TransitionResult<SenderHeartbeat>> {
+    return this.staffAlertsStore.recordSenderHeartbeat(input, context);
+  }
+
+  getSenderHeartbeat(context: ReadContext): Promise<SenderHeartbeat | null> {
+    return this.staffAlertsStore.getSenderHeartbeat(context);
+  }
+
+  claimStaffAlert(input: StaffAlertClaimInput, context: ReadContext): Promise<TransitionResult<StaffAlertClaim>> {
+    return this.staffAlertsStore.claimStaffAlert(input, context);
+  }
+
+  releaseStaffAlert(input: StaffAlertReleaseInput, context: ReadContext): Promise<TransitionResult<void>> {
+    return this.staffAlertsStore.releaseStaffAlert(input, context);
+  }
+  // Incoming text messages (2026-09-26)
+  // ---------------------------------------------------------------------------
+
+  findPlansForInboundNumber(mobileE164: string, context: ReadContext): Promise<InboundReplyPlanMatch[]> {
+    return this.inboundRepliesStore.findPlansForInboundNumber(mobileE164, context);
+  }
+
+  recordInboundReply(
+    input: RecordInboundReplyInput,
+    context: WriteContext,
+  ): Promise<TransitionResult<InboundReplyRecord>> {
+    return this.inboundRepliesStore.recordInboundReply(input, context);
+  }
+
+  markInboundReplyFollowedUp(
+    input: FollowUpInboundReplyInput,
+    context: WriteContext,
+  ): Promise<TransitionResult<InboundReplyRecord>> {
+    return this.inboundRepliesStore.markInboundReplyFollowedUp(input, context);
+  }
+
+  listOpenInboundReplies(context: ReadContext): Promise<InboundReplyRecord[]> {
+    return this.inboundRepliesStore.listOpenInboundReplies(context);
+  }
+
+  listInboundReplies(planId: PlanId, context: ReadContext): Promise<InboundReplyWithText[]> {
+    return this.inboundRepliesStore.listInboundReplies(planId, context);
+  }
+
+  claimInboundAutoReply(input: { senderKey: string; windowMs: number }): Promise<boolean> {
+    return this.inboundRepliesStore.claimInboundAutoReply(input);
   }
 }
 

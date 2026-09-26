@@ -198,6 +198,17 @@ const TEAM_ROUTE = `${WORKSPACE_ROUTE}/team`;
 const INTAKE_ROUTE = `${WORKSPACE_ROUTE}/intake`;
 
 /**
+ * The service stop screen and the access trail (owner request 2026-09-26: "The emergency safety stop
+ * has no button"). Listed so the every-screen blocks below visit them; no block here presses "Stop
+ * all sending", because this server is shared by the whole suite and a stop cannot be lifted in the
+ * demo. The stop flow, role gating and the approvals are proved offline in
+ * `tests/caring-contacts-service-stop-screen.dom.test.tsx` and
+ * `tests/caring-contacts-service-stop-page.dom.test.tsx`.
+ */
+const SERVICE_STOP_ROUTE = `${WORKSPACE_ROUTE}/service-stop`;
+const ACCESS_TRAIL_ROUTE = `${WORKSPACE_ROUTE}/access-trail`;
+
+/**
  * Every production screen this workspace serves, with the `h1` it must render.
  *
  * The header above states the rule this list exists to keep true: the adoption
@@ -262,6 +273,8 @@ const WORKSPACE_SCREENS = [
   { name: "Reports", route: REPORTS_ROUTE, heading: "Reports" },
   { name: "Team", route: TEAM_ROUTE, heading: "Team" },
   { name: "Intake", route: INTAKE_ROUTE, heading: "Referral intake" },
+  { name: "Service stop", route: SERVICE_STOP_ROUTE, heading: "Service stop" },
+  { name: "Access trail", route: ACCESS_TRAIL_ROUTE, heading: "Access trail" },
 ] as const;
 
 type WorkspaceScreen = (typeof WORKSPACE_SCREENS)[number];

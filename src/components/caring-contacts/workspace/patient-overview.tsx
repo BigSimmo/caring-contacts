@@ -5,6 +5,7 @@ import { CARING_CONTACTS_ROUTES, patientPlanRoute } from "@/lib/caring-contacts-
 import { planAssuranceWording, type PlanAssuranceAttestation } from "@/lib/caring-contacts/assurances";
 import { awstCalendarDay } from "@/lib/caring-contacts/clock";
 import type { Episode } from "@/lib/caring-contacts/episode";
+import type { InboundReplyWithText } from "@/lib/caring-contacts/inbound-replies";
 import { contactSendability, type PlanState } from "@/lib/caring-contacts/model";
 import {
   summariseStoredContacts,
@@ -18,6 +19,7 @@ import {
 import { AutomatedState } from "./automated-state";
 import { CONTACT_STATE_LABELS, MESSAGE_TYPE_LABELS } from "./contact-vocabulary";
 import { ListEmptyState } from "./list-empty-state";
+import { PatientReplies } from "./inbound-replies";
 import { ExitOnlyOverlayTrigger } from "./overlays/exit-only-overlay-trigger";
 import type { PlanActionsContext } from "./plan-action-rules";
 import { PlanActions } from "./plan-actions";
@@ -204,6 +206,13 @@ export type PatientOverviewView =
       /** How many OTHER plans this team holds for this patient, so the reader knows this is one of several. */
       otherPlanCount: number;
       /**
+       * Incoming text messages (2026-09-26): this plan's replies from the patient, with their
+       * words. Null (or absent) when the acting role may not read them; the section is then absent.
+       */
+      inboundReplies?: readonly InboundReplyWithText[] | null;
+      /** Whether the acting role holds `followUpInboundReply`, decided by the page. */
+      mayFollowUpReplies?: boolean;
+      /**
        * "Record a change" and "Check the number", resolved by the page from the actor and the plan.
        * Optional: absent renders neither, which is also what a role without the capability sees.
        */
@@ -255,6 +264,8 @@ export function PatientOverview({ patientId, view }: PatientOverviewProps) {
       episode={view.episode}
       otherPlanCount={view.otherPlanCount}
       actions={view.actions}
+      inboundReplies={view.inboundReplies ?? null}
+      mayFollowUpReplies={view.mayFollowUpReplies ?? false}
       updates={view.updates}
     />
   );
@@ -396,6 +407,8 @@ function EpisodeOverview({
   episode,
   otherPlanCount,
   actions,
+  inboundReplies,
+  mayFollowUpReplies,
   updates,
 }: {
   patientId: string;
@@ -403,6 +416,8 @@ function EpisodeOverview({
   episode: Episode | null;
   otherPlanCount: number;
   actions: PlanActionsContext;
+  inboundReplies: readonly InboundReplyWithText[] | null;
+  mayFollowUpReplies: boolean;
   updates?: PatientUpdatesContext;
 }) {
   const name = episode !== null && episode.patientName !== "" ? episode.patientName : null;
@@ -535,6 +550,9 @@ function EpisodeOverview({
           This patient is invented, and so is every identifier and number held against them.
         </p>
       </section>
+
+      {/* Incoming text messages (2026-09-26): the patient's replies, above the plan they act on. */}
+      {inboundReplies !== null ? <PatientReplies replies={inboundReplies} mayFollowUp={mayFollowUpReplies} /> : null}
 
       <section aria-labelledby="caring-contacts-plan-heading" className={cardClass}>
         <h2 id="caring-contacts-plan-heading" className="text-base font-semibold text-[color:var(--text-heading)]">

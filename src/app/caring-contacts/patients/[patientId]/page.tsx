@@ -19,6 +19,7 @@ import {
 } from "@/lib/caring-contacts-server/session";
 import { caringContactsStore } from "@/lib/caring-contacts-server/store";
 import type { Episode } from "@/lib/caring-contacts/episode";
+import type { InboundReplyWithText } from "@/lib/caring-contacts/inbound-replies";
 import { planId as toPlanId } from "@/lib/caring-contacts/ids";
 import type { PlanAssignment } from "@/lib/caring-contacts/assignment";
 import {
@@ -304,12 +305,43 @@ export default async function CaringContactsPatientOverviewPage({
       throw new Error("caring-contacts assignment read released nothing for a plan this actor may read.");
     }
 
+    // -- Incoming text messages (2026-09-26) ------------------------------------------------------
+    // This plan's replies, WITH the patient's words -- so read only by a role that may read the
+    // patient's record (`READ_ACTIONS.inboundReply`), and audited as a view of this plan's replies.
+    // Null for any other role: the section is then absent, never an empty list that reads as "the
+    // patient has not replied".
+    const mayViewReplies = canPerformCaringContactAction(actor, READ_ACTIONS.inboundReply, {
+      teamId: actor.teamId,
+    }).allowed;
+    let inboundReplies: InboundReplyWithText[] | null = null;
+    if (mayViewReplies) {
+      const repliesRead = await auditedRead<InboundReplyWithText[]>(
+        store,
+        actor,
+        { kind: "view", objectType: "inboundReply", objectId: chosen.plan.id },
+        () => store.listInboundReplies(toPlanId(chosen.plan.id), { actor }),
+      );
+      if (repliesRead.outcome === "failed") {
+        throw repliesRead.error instanceof Error
+          ? repliesRead.error
+          : new Error("Failed to read this patient's replies.");
+      }
+      if (!repliesRead.recorded) {
+        throw new Error("Caring Contacts access trail is unavailable; nothing was rendered.");
+      }
+      if (repliesRead.released == null) throw new Error("caring-contacts replies read returned no list.");
+      inboundReplies = repliesRead.released;
+    }
+
     return {
       kind: "episode",
       record: chosen,
       episode: episodeRead.released,
       otherPlanCount: plansForPatient.length - 1,
       actions: planActionsContext(chosen, assignmentRead.released),
+      inboundReplies,
+      mayFollowUpReplies: canPerformCaringContactAction(actor, "followUpInboundReply", { teamId: actor.teamId })
+        .allowed,
       updates: patientUpdatesContext(chosen),
     };
   }

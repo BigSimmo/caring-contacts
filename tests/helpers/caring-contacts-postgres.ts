@@ -89,6 +89,9 @@ export async function applyCaringContactsMigrations(pool: Pool): Promise<void> {
 /** Every table the suites write to, child-first, so truncation between tests is FK-safe. */
 export const CARING_CONTACTS_DATA_TABLES: readonly string[] = Object.freeze([
   "caring_contacts.contact_dispatches",
+  // Incoming text messages (2026-09-26): replies hang off plans; the loop guard belongs to no team.
+  "caring_contacts.inbound_replies",
+  "caring_contacts.inbound_auto_reply_limits",
   "caring_contacts.cultural_identity_reports",
   "caring_contacts.retention_state",
   "caring_contacts.plan_reassignments",
@@ -107,6 +110,11 @@ export const CARING_CONTACTS_DATA_TABLES: readonly string[] = Object.freeze([
   // ON PURPOSE. It is the one row whose presence changes the answer for every other test in the
   // file: a stop left standing would have the domain refuse every subsequent send, and the
   // resulting cascade of failures would read as a schema fault rather than as leaked state.
+  // Migration 0020 (staff alert delivery): the sender heartbeat singleton and the alert cooldown
+  // claims. Truncated for the same reason as the service stop: a heartbeat or a claim left by one
+  // test would change the answer another test gets.
+  "caring_contacts.sender_heartbeats",
+  "caring_contacts.staff_alert_deliveries",
   "caring_contacts.service_restart_approvals",
   "caring_contacts.service_state",
   "caring_contacts.service_stops",

@@ -12,7 +12,7 @@ and nothing is ever sent to a real number. It is not approved for real patients.
 
 | Folder                                                                        | What it is                                                                                                                                                                                           |
 | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/app/caring-contacts/`                                                    | The working app pages: Today, Patients, Schedule, New plan, Templates, Team, Reports, Guidance, Intake                                                                                               |
+| `src/app/caring-contacts/`                                                    | The working app pages: Today, Patients, Schedule, New plan, Templates, Team, Reports, Guidance, Intake, Service stop, Access trail                                                                   |
 | `src/app/api/caring-contacts/`                                                | The server side the pages talk to (plans, contacts, referrals, schedule, team, and so on)                                                                                                            |
 | `src/lib/caring-contacts/`, `src/lib/caring-contacts-server/`                 | The rules and data handling: schedules, message wording rules, permissions, audit trail, retention, the in-memory demo store and the Postgres store                                                  |
 | `src/components/caring-contacts/workspace/`                                   | The screens and parts of the working app                                                                                                                                                             |
@@ -276,6 +276,11 @@ do (accounts, credentials and sign-off).
   to everyone). A message type with no approved wording is never sent; it is marked for review.
 - **Cancel a plan that never started**, so it no longer blocks a future plan.
 - **Claim a plan**, from the plan screen or the Team screen's "Take on unclaimed work" list.
+- **A Service stop screen** with a "Stop all sending" button (reason and a required incident note,
+  then a plain confirm step), and the restart approvals so far, where each named person records
+  theirs. Staff without the right role are told who can. The stop banner links to it.
+- **An Access trail screen**: who opened, searched or changed which record in the last 7 days,
+  read-only, for the auditor role.
 - **An optional reason when a plan is withdrawn** (new database file 0012).
 - **Decisions taken:** patient details are kept for 7 years after a plan ends; restarting after a
   safety stop needs different named people who each hold the approving role; a message cannot be
@@ -299,3 +304,48 @@ do (accounts, credentials and sign-off).
 - Not re-run this round: the Australian container build (it built and ran in the second round;
   this round added one small library, `jose`, for sign-in). Sign-in and Telstra sending are tested
   only against offline stand-ins, never a real provider.
+
+## Staff alerts and the health check
+
+Staff alerts are now actually sent, and the health check notices when the background sender stops.
+
+- **What an alert says.** Only the kind of problem, how many items, a fixed reason and the team,
+  for example "2 items affected by permanent delivery failure". Never a patient's name, number or
+  message.
+- **Where it goes.** Staff sign-in keeps no email address or phone number, so alerts go to one team
+  channel (a Teams or Slack incoming webhook, or an email relay). Until that address is set, alerts
+  are only kept in memory and written to the log. The settings are in `.env.example`.
+- **Which alerts go.** Failed deliveries and messages that need checking go only when someone in
+  the team has switched that alert on. Three safety alerts always go: a safety stop was raised, the
+  background sender has stopped, or the text-message carrier is limiting how fast we can send.
+- **No repeats.** The same alert is sent at most once an hour while the problem continues.
+- **The health check** (`/api/caring-contacts/ready`) now says whether the sender is running. With
+  real text messages or live mode on, it reports the service as not ready when no sender run has
+  finished for 15 minutes, and sends the "sender stopped" alert. In the demo it only reports.
+- **Carrier limits.** If the carrier says "too many requests", that run stops sending; the other
+  due messages go on the next run, still inside their sending hours.
+
+New database file 0020 holds the sender's last-run time and when each alert was last sent. Full
+details for the people running it: `deploy/australia/README.md`, "Staff alerts and the sender
+health check".
+
+### Replies to the service's number (26 September 2026)
+
+Texts sent back to the service used to vanish. Now:
+
+- **Everyone who texts the number gets one automatic reply**, at most once a day per number:
+  "This number isn't monitored. For help now call 000, Lifeline 13 11 14, or the Mental Health
+  Emergency Response Line 1300 555 788 (Perth) or 1800 676 822 (Peel)." This wording is
+  provisional and needs clinical sign-off (`docs/caring-contacts/message-review-pack.md`,
+  Message C).
+- **A reply from a patient's number becomes a "reply to check"** on the Today screen and on the
+  patient's page, where a clinician reads it and presses "Mark followed up". Only roles that may
+  read the patient's record can see the words.
+- **STOP and similar words pause the plan** for a person to decide what happens next. Nothing is
+  withdrawn or cancelled automatically, because "stop, I can't do this anymore" could mean anything.
+- **Needs a new setting:** `CARING_CONTACTS_INBOUND_WEBHOOK_SECRET` (at least 32 characters). Without
+  it the incoming-text address does not exist. How Telstra delivers incoming texts has not been
+  confirmed and must be tested with a staff phone first.
+- **One thing that is now untrue:** the existing message wording tells patients "No one reads
+  replies to this number". Replies from patients are now read, so that sentence must be reworded
+  by the clinical review before real sending (hazard H-C41).

@@ -7,6 +7,7 @@ import { auditedRead } from "@/lib/caring-contacts-server/handler";
 import { isCaringContactsWorkspaceEnabled, resolveCaringContactsActor } from "@/lib/caring-contacts-server/session";
 import { caringContactsStore } from "@/lib/caring-contacts-server/store";
 import { awstCalendarDay, systemClock } from "@/lib/caring-contacts/clock";
+import type { InboundReplyRecord } from "@/lib/caring-contacts/inbound-replies";
 import { canPerformCaringContactAction } from "@/lib/caring-contacts/permissions";
 import { READ_ACTIONS, type PlanRecord } from "@/lib/caring-contacts/repository";
 import { buildScheduleRange } from "@/lib/caring-contacts/schedule-view";
@@ -101,6 +102,32 @@ export default async function CaringContactsTodayPage() {
   const scheduleDay = range.view.days[0];
   const teamWorkload = teamRead.released;
 
+  // -- Incoming text messages (2026-09-26) --------------------------------------------------------
+  // Patients' replies not yet followed up. Read only by a role that may read them (the store would
+  // answer anyone else with `[]`, which would render as "none waiting" -- a denied read shown as an
+  // authoritative empty list), and audited like every other read on this page. The list carries no
+  // words; the patient's page shows those.
+  const mayViewReplies = canPerformCaringContactAction(actor, READ_ACTIONS.inboundReply, {
+    teamId: actor.teamId,
+  }).allowed;
+  let repliesToCheck: InboundReplyRecord[] | null = null;
+  if (mayViewReplies) {
+    const repliesRead = await auditedRead<InboundReplyRecord[]>(
+      store,
+      actor,
+      { kind: "search", objectType: "inboundReply", objectId: "open" },
+      () => store.listOpenInboundReplies({ actor }),
+    );
+    if (repliesRead.outcome === "failed") {
+      throw repliesRead.error instanceof Error ? repliesRead.error : new Error("Failed to read patients' replies.");
+    }
+    if (!repliesRead.recorded) {
+      throw new Error("Caring Contacts access trail is unavailable; nothing was rendered.");
+    }
+    if (repliesRead.released == null) throw new Error("caring-contacts replies read returned no list.");
+    repliesToCheck = repliesRead.released;
+  }
+
   return (
     <CaringContactsShell
       title="Today"
@@ -113,6 +140,7 @@ export default async function CaringContactsTodayPage() {
         serviceState={serviceState}
         todayCalendarDay={todayCalendarDay}
         mayViewPlans={mayViewPlans}
+        repliesToCheck={repliesToCheck}
       />
     </CaringContactsShell>
   );

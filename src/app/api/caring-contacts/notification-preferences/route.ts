@@ -23,6 +23,10 @@ const preferencesSchema = z
         "serviceSafetyStop",
         "exceptionBacklog",
         "pathwayRetired",
+        // Operational classes, added with staff alert delivery. Delivered to the team channel
+        // regardless of opt-in; accepted here so a person's own record can hold them too.
+        "senderStalled",
+        "carrierRateLimited",
       ]),
     ),
     idempotencyKey: auditableIdentifier,

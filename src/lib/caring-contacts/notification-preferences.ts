@@ -15,8 +15,20 @@
 //     is never handed one -- the function's own signature has nowhere for that data to enter.
 import type { ActorId } from "./ids";
 
+// The last two classes were added with staff alert delivery (./alerts/). They are OPERATIONAL:
+// "the background sender has stopped running" and "the carrier is throttling our messages" are
+// facts about the service, not about any one patient, and together with `serviceSafetyStop` they
+// are delivered to the team channel whether or not anyone opted in (see OPERATIONAL_ALERT_CLASSES
+// in ./alerts/staff-alert.ts). They are still listed here so a person can opt in to them and the
+// preference record can hold them.
 export type AlertClass =
-  "unclaimedWorkEscalation" | "permanentDeliveryFailure" | "serviceSafetyStop" | "exceptionBacklog" | "pathwayRetired";
+  | "unclaimedWorkEscalation"
+  | "permanentDeliveryFailure"
+  | "serviceSafetyStop"
+  | "exceptionBacklog"
+  | "pathwayRetired"
+  | "senderStalled"
+  | "carrierRateLimited";
 
 export const ALERT_CLASSES: readonly AlertClass[] = Object.freeze([
   "unclaimedWorkEscalation",
@@ -24,6 +36,8 @@ export const ALERT_CLASSES: readonly AlertClass[] = Object.freeze([
   "serviceSafetyStop",
   "exceptionBacklog",
   "pathwayRetired",
+  "senderStalled",
+  "carrierRateLimited",
 ]);
 
 export type NotificationPreferences = {
@@ -57,6 +71,8 @@ const ALERT_CLASS_LABELS: Record<AlertClass, string> = {
   serviceSafetyStop: "service safety stop",
   exceptionBacklog: "exception backlog",
   pathwayRetired: "pathway retired",
+  senderStalled: "a stalled background sender",
+  carrierRateLimited: "carrier rate limiting",
 };
 
 /**

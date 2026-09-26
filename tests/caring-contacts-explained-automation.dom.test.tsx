@@ -9,6 +9,7 @@ import { stripSourceComments } from "./helpers/strip-source-comments";
 import { AutomatedState } from "@/components/caring-contacts/workspace/automated-state";
 import { ServiceStateBanner } from "@/components/caring-contacts/workspace/service-state-banner";
 import { CaringContactsShell } from "@/components/caring-contacts/workspace/shell";
+import { CARING_CONTACTS_ROUTES } from "@/lib/caring-contacts-routes";
 import { fixedClock } from "@/lib/caring-contacts/clock";
 import { actorId, teamId } from "@/lib/caring-contacts/ids";
 import {
@@ -154,40 +155,37 @@ describe("explained automation", () => {
     }
   });
 
-  it("reaches the service-stop screen through a control that states its reason", () => {
+  it("reaches the service-stop screen through a link from the banner", () => {
     render(<ServiceStateBanner state={stoppedServiceState()} />);
     const banner = screen.getByRole("status");
-    const control = banner.querySelector("button");
+    // Ruling 52 held this as an unavailable control that stated its reason until the service stop
+    // screen existed. It was built on 2026-09-26 (owner request: "The emergency safety stop has no
+    // button"), so the control is now a real internal link, moved in the same change (Ruling 89) --
+    // and there is no longer an inert button left beside it.
+    const control = banner.querySelector("a");
     expect(control, "the banner offers no way to reach the service-stop screen").not.toBeNull();
-    // Ruling 52: the service-stop screen has no page yet, so this is an
-    // unavailable control that says so — never a link into a 404.
-    expect(control).toHaveAttribute("aria-disabled", "true");
-    expect(control).toHaveAttribute("type", "button");
-    expect(control).toHaveAttribute("title", expect.stringContaining("coming soon"));
-    // Native `disabled` would remove the tab stop, so the stated reason could
-    // never be reached by keyboard. The two attributes are never used together.
-    expect(control).not.toHaveAttribute("disabled");
-    const describedBy = control!.getAttribute("aria-describedby");
-    expect(describedBy, "the control states no reason").toBeTruthy();
-    expect(document.getElementById(describedBy!)?.textContent ?? "").not.toBe("");
-    expect(banner.querySelector("a")).toBeNull();
+    expect(control).toHaveAttribute("href", CARING_CONTACTS_ROUTES.serviceStop);
+    expect(control).toHaveAttribute("data-internal-link", "true");
+    expect(banner.querySelector("button")).toBeNull();
   });
 
   it("gives the banner's service-stop control a name of its own", () => {
-    // The More panel already carries a destination named exactly "Service stop".
-    // Two controls sharing an accessible name are indistinguishable in a screen
-    // reader's control list, so the banner's — the one with incident context —
-    // takes the longer name.
+    // The More panel and the rail already carry a destination named exactly "Service stop".
+    // Two controls sharing an accessible name are indistinguishable in a screen reader's
+    // control list, so the banner's — the one with incident context — takes the longer name.
     render(
       <CaringContactsShell title="Today" serviceState={stoppedServiceState()}>
         content
       </CaringContactsShell>,
     );
-    expect(screen.getAllByRole("button", { name: "Service stop" })).toHaveLength(1);
-    const bannerControl = screen.getByRole("status").querySelector("button");
+    const bannerControl = screen.getByRole("status").querySelector("a");
     expect(bannerControl, "the banner offers no service-stop control").not.toBeNull();
     expect(bannerControl!.textContent).not.toBe("Service stop");
     expect(bannerControl!.textContent ?? "").toContain("Service stop");
+    // Every control named exactly "Service stop" is a navigation destination, never the banner's.
+    for (const destination of screen.getAllByRole("link", { name: "Service stop" })) {
+      expect(screen.getByRole("status").contains(destination)).toBe(false);
+    }
   });
 
   it("cannot be rendered by a screen that never read the service state", () => {
@@ -366,6 +364,25 @@ const ALLOWED_CLIENT_COMPONENTS = [
   // importing the domain's, so its module graph never reaches the repository; the companion test
   // below proves that graph never names the service-state module or type.
   "team-claim-list.tsx",
+  // The service stop screen's two writes (owner request 2026-09-26: "The emergency safety stop has
+  // no button"): the "Stop all sending" form and the restart-approval controls. A client boundary
+  // because both are clicks that post, and the form holds typed state. Added on the same three
+  // conditions as every entry above, and on this one above all, because the record it acts on
+  // carries the incident note: its props are an address, reason-category wording, one wording
+  // string for the three seats, the seats this person may take as {seat name, wording}, and a
+  // count -- no state object, and nothing derived from the record. The server screen reads and
+  // narrows the record and renders the note itself; the address arrives as a prop precisely so this
+  // module's graph never names the record's module. The companion test below proves that graph,
+  // and `tests/caring-contacts-service-stop-page.dom.test.tsx` stops the service with a distinctive
+  // note and asserts it never reaches this boundary's props.
+  "service-stop-controls.tsx",
+  // Incoming text messages (2026-09-26): the "Mark followed up" button on a patient's reply. A
+  // click that performs a write is a client capability by definition. Added on the same three
+  // conditions as every entry above: its props are a plan id, a reply id and a version number --
+  // no state object, nothing derived from the record, and not even the reply's own words, which
+  // the Server Component beside it renders; the companion test below proves its module graph
+  // never names the service-state module or type; and it is here deliberately.
+  "inbound-reply-follow-up-button.tsx",
   // The patient/plan screen's "Record a change" (readmission, death, death correction, mobile
   // number, name) and "Check the number" (a one-off test text and the patient's answer). Client
   // boundaries because each performs a write on a click, and the mobile change asks the
