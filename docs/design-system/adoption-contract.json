@@ -15,7 +15,9 @@
         "src/app/caring-contacts/guidance/page.tsx",
         "src/app/caring-contacts/reports/page.tsx",
         "src/app/caring-contacts/team/page.tsx",
-        "src/app/caring-contacts/intake/page.tsx"
+        "src/app/caring-contacts/intake/page.tsx",
+        "src/app/caring-contacts/service-stop/page.tsx",
+        "src/app/caring-contacts/access-trail/page.tsx"
       ],
       "routeRoots": true,
       "roots": [],

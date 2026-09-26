@@ -8,7 +8,9 @@ import {
   LayoutDashboard,
   LogOut,
   MoreHorizontal,
+  OctagonX,
   Plus,
+  ScrollText,
   UserCog,
   Users,
 } from "lucide-react";
@@ -163,8 +165,20 @@ const MORE_DESTINATIONS: readonly MoreDestination[] = [
     href: CARING_CONTACTS_ROUTES.intake,
     reason: "Registering a hospital discharge referral by hand when the electronic feed is unavailable.",
   },
-  { id: "service-stop", label: "Service stop", reason: "Stopping the whole service, and restarting it." },
-  { id: "access-trail", label: "Access trail", reason: "Who opened which record, and when." },
+  // Service stop and Access trail: links since the service stop screen was built (owner request
+  // 2026-09-26), each in the same change as its page (Ruling 89).
+  {
+    id: "service-stop",
+    label: "Service stop",
+    href: CARING_CONTACTS_ROUTES.serviceStop,
+    reason: "Stopping the whole service, and restarting it.",
+  },
+  {
+    id: "access-trail",
+    label: "Access trail",
+    href: CARING_CONTACTS_ROUTES.accessTrail,
+    reason: "Who opened which record, and when.",
+  },
   { id: "workload", label: "Workload", reason: "Work waiting across the team." },
   { id: "reconciliation", label: "Reconciliation", reason: "Differences between what was planned and what happened." },
   { id: "notifications", label: "Notifications", reason: "What the team is told, and how." },
@@ -186,6 +200,9 @@ const RAIL_MORE_ICONS: Readonly<Record<string, ComponentType<SVGProps<SVGSVGElem
   guidance: BookOpen,
   reports: BarChart3,
   intake: FilePlus,
+  // Service stop screen (2026-09-26).
+  "service-stop": OctagonX,
+  "access-trail": ScrollText,
 };
 
 const RAIL_MORE_DESTINATIONS = MORE_DESTINATIONS.flatMap((destination) =>

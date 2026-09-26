@@ -12,7 +12,7 @@ and nothing is ever sent to a real number. It is not approved for real patients.
 
 | Folder                                                                        | What it is                                                                                                                                                                                           |
 | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/app/caring-contacts/`                                                    | The working app pages: Today, Patients, Schedule, New plan, Templates, Team, Reports, Guidance, Intake                                                                                               |
+| `src/app/caring-contacts/`                                                    | The working app pages: Today, Patients, Schedule, New plan, Templates, Team, Reports, Guidance, Intake, Service stop, Access trail                                                                   |
 | `src/app/api/caring-contacts/`                                                | The server side the pages talk to (plans, contacts, referrals, schedule, team, and so on)                                                                                                            |
 | `src/lib/caring-contacts/`, `src/lib/caring-contacts-server/`                 | The rules and data handling: schedules, message wording rules, permissions, audit trail, retention, the in-memory demo store and the Postgres store                                                  |
 | `src/components/caring-contacts/workspace/`                                   | The screens and parts of the working app                                                                                                                                                             |
@@ -276,6 +276,11 @@ do (accounts, credentials and sign-off).
   to everyone). A message type with no approved wording is never sent; it is marked for review.
 - **Cancel a plan that never started**, so it no longer blocks a future plan.
 - **Claim a plan**, from the plan screen or the Team screen's "Take on unclaimed work" list.
+- **A Service stop screen** with a "Stop all sending" button (reason and a required incident note,
+  then a plain confirm step), and the restart approvals so far, where each named person records
+  theirs. Staff without the right role are told who can. The stop banner links to it.
+- **An Access trail screen**: who opened, searched or changed which record in the last 7 days,
+  read-only, for the auditor role.
 - **An optional reason when a plan is withdrawn** (new database file 0012).
 - **Decisions taken:** patient details are kept for 7 years after a plan ends; restarting after a
   safety stop needs different named people who each hold the approving role; a message cannot be

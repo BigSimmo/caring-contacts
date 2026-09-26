@@ -1,4 +1,7 @@
 import { OctagonX } from "lucide-react";
+import Link from "next/link";
+
+import { CARING_CONTACTS_ROUTES } from "@/lib/caring-contacts-routes";
 
 import {
   describeServiceStop,
@@ -13,7 +16,6 @@ import {
   SERVICE_STOP_BANNER_ID,
 } from "./service-stop-bar-anchors";
 import { ServiceStopScrollWatcher } from "./service-stop-scroll-watcher";
-import { UnavailableDestination } from "./unavailable-destination";
 
 /**
  * The state word, in plain language, carried as text.
@@ -59,17 +61,17 @@ function StoppedServiceBanner({ facts }: { facts: ServiceStopBannerFacts }) {
       </p>
       <p className="max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text)]">{explanation}</p>
       {/*
-        Ruling 52 and `docs/wiring-conventions.md`: `CARING_CONTACTS_ROUTES.serviceStop`
-        has no page until Plan 2B builds it, so this states its reason instead of
-        linking into a not-found page. Adding the `<Link href={…}>` is the whole of
-        that later change; nothing else here moves.
+        Ruling 52 and `docs/wiring-conventions.md`: this stated its reason as an unavailable
+        destination until the service stop screen existed. It links there now, in the same change
+        that built the screen (Ruling 89) -- the record, and the approvals that restart sending.
       */}
-      <UnavailableDestination
-        id="service-state-banner"
-        label="Service stop record"
-        reason="What stopped sending, and the three approvals from three different people that start it again."
-        className="inline-flex min-h-tap w-fit items-center rounded-[var(--radius-md)] border border-[color:var(--danger-border)] bg-[color:var(--surface)] px-4 text-sm font-semibold text-[color:var(--text)]"
-      />
+      <Link
+        href={CARING_CONTACTS_ROUTES.serviceStop}
+        data-internal-link="true"
+        className="inline-flex min-h-tap w-fit items-center rounded-[var(--radius-md)] border border-[color:var(--danger-border)] bg-[color:var(--surface)] px-4 text-sm font-semibold text-[color:var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--focus)] forced-colors:border-[CanvasText]"
+      >
+        Service stop record
+      </Link>
     </div>
   );
 }

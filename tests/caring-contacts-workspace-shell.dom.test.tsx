@@ -195,6 +195,10 @@ describe("caring-contacts workspace shell", () => {
       { label: "Guidance", kind: "link" },
       { label: "Reports", kind: "link" },
       { label: "Referral intake", kind: "link" },
+      // Service stop and Access trail joined in the same change as their pages (owner request
+      // 2026-09-26: "The emergency safety stop has no button"), in the More panel's own order.
+      { label: "Service stop", kind: "link" },
+      { label: "Access trail", kind: "link" },
     ]);
   });
 
@@ -241,6 +245,8 @@ describe("caring-contacts workspace shell", () => {
         CARING_CONTACTS_ROUTES.reports,
         CARING_CONTACTS_ROUTES.team,
         CARING_CONTACTS_ROUTES.intake,
+        CARING_CONTACTS_ROUTES.serviceStop,
+        CARING_CONTACTS_ROUTES.accessTrail,
       ]),
     );
   });
@@ -259,9 +265,13 @@ describe("caring-contacts workspace shell", () => {
       // Referral intake has had a page since the intake fallback was built; it was reachable only
       // from a quick link on Today until it joined this panel.
       { label: "Referral intake", kind: "link" },
-      ...["Service stop", "Access trail", "Workload", "Reconciliation", "Notifications", "Training", "Coverage"].map(
-        (label) => ({ label, kind: "unavailable" }),
-      ),
+      // Links since the service stop screen and the access trail screen were built (2026-09-26).
+      { label: "Service stop", kind: "link" },
+      { label: "Access trail", kind: "link" },
+      ...["Workload", "Reconciliation", "Notifications", "Training", "Coverage"].map((label) => ({
+        label,
+        kind: "unavailable",
+      })),
     ]);
   });
 
@@ -282,18 +292,10 @@ describe("caring-contacts workspace shell", () => {
     // other 10 with Schedule unbuilt on both the rail and the phone bar. Merged, Task 13 lit
     // Schedule, Task 15 lit Templates and Task 18 lit Team, so all three leave the count entirely.
     // What remains is exactly the destinations with no page, named rather than counted so the
-    // expectation states which set it is about: Service stop, Access trail, Workload,
-    // Reconciliation, Notifications, Training and Coverage. Derived from the two destination tables
-    // in `shell.tsx`, not from what this suite happened to print.
-    const unbuilt = [
-      "Service stop",
-      "Access trail",
-      "Workload",
-      "Reconciliation",
-      "Notifications",
-      "Training",
-      "Coverage",
-    ];
+    // expectation states which set it is about: Workload, Reconciliation, Notifications, Training
+    // and Coverage (Service stop and Access trail left it on 2026-09-26, with their pages). Derived
+    // from the two destination tables in `shell.tsx`, not from what this suite happened to print.
+    const unbuilt = ["Workload", "Reconciliation", "Notifications", "Training", "Coverage"];
     expect(
       [...container.querySelectorAll("button")]
         .filter((c) => destinationKind(c) === "unavailable")
@@ -342,6 +344,8 @@ describe("caring-contacts workspace shell", () => {
       CARING_CONTACTS_ROUTES.guidance,
       CARING_CONTACTS_ROUTES.reports,
       CARING_CONTACTS_ROUTES.team,
+      CARING_CONTACTS_ROUTES.serviceStop,
+      CARING_CONTACTS_ROUTES.accessTrail,
     ];
 
     for (const href of built) {
