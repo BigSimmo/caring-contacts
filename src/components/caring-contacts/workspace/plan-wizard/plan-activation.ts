@@ -898,6 +898,15 @@ const ACTIVATION_REFUSAL_WORDING: Readonly<Record<string, SubmissionRefusalWordi
       because: `${PLAN_EXISTS}${NOT_STARTED} The session you are acting in has no caring-contacts role, so the request to start it could not be checked against one.`,
       changedBy: `Signing in again so the session carries a role, then ${PRESS_AGAIN.charAt(0).toLowerCase()}${PRESS_AGAIN.slice(1)}`,
     },
+    // A test text was sent to this plan's number and nobody has said it arrived (or someone said it
+    // did not). Starting would send caring contacts to a number that has not been shown to reach the
+    // patient, so the service holds the start until the test text is settled on the patient's page.
+    "mobile-check-unconfirmed": {
+      heading: "The plan was created, and it cannot start until the test text is confirmed",
+      because: `${PLAN_EXISTS}${NOT_STARTED} A test text was sent to this plan's mobile number and nobody has confirmed that it arrived, so the service will not start the plan in case the number is wrong.`,
+      changedBy:
+        "Opening the plan on the patient's screen and confirming there that the test text arrived — or, if it did not, checking the number with the patient and sending the test text again. Then start it from there. It is the same plan; nothing here will create a second one.",
+    },
     "service-stopped": {
       heading: "The plan was created, and the service is stopped so it cannot start",
       because: `${PLAN_EXISTS}${NOT_STARTED} A service-wide safety stop is in place and it holds every write, including the one that starts a plan.`,

@@ -240,6 +240,58 @@ describe("caring-contact migrations", () => {
     await expect(setReason(`  ${"x".repeat(200)}  `)).resolves.toBeUndefined();
   });
 
+  it("holds the number check as a closed state defaulting to notChecked, with no patient content (0030)", async () => {
+    const { rows: columns } = await pool.query<{
+      column_name: string;
+      is_nullable: string;
+      column_default: string | null;
+    }>(
+      `select column_name, is_nullable, column_default from information_schema.columns
+       where table_schema = 'caring_contacts' and table_name = 'plans' and column_name like 'mobile_check_%'
+       order by column_name`,
+    );
+    expect(columns.map((column) => [column.column_name, column.is_nullable])).toEqual([
+      ["mobile_check_resolved_at", "YES"],
+      ["mobile_check_sent_at", "YES"],
+      ["mobile_check_state", "NO"],
+    ]);
+    expect(columns[2].column_default).toContain("notChecked");
+
+    // A plan written without naming the columns -- every plan that existed before 0030 -- is unchecked.
+    await seedPlan(pool, { teamId: TEAM_NORTH, planId: "PLAN-MOBILE-CHECK", patientId: "PATIENT-MC" });
+    const { rows } = await pool.query<{ mobile_check_state: string; mobile_check_sent_at: Date | null }>(
+      "select mobile_check_state, mobile_check_sent_at from caring_contacts.plans where id = 'PLAN-MOBILE-CHECK'",
+    );
+    expect(rows).toEqual([{ mobile_check_state: "notChecked", mobile_check_sent_at: null }]);
+
+    const setState = async (value: string, key: string) =>
+      runInTeamSession(pool, { teamId: TEAM_NORTH, auditToken: nextAuditToken() }, async (client) => {
+        await insertAuditEvent(client, {
+          teamId: TEAM_NORTH,
+          actorId: "ACTOR-NORTH",
+          actorRoles: ["coordinator"],
+          action: "recordMobileCheckSent",
+          objectType: "plan",
+          objectId: "PLAN-MOBILE-CHECK",
+          outcome: "allowed",
+          idempotencyKey: `mobile-check-${key}`,
+        });
+        await client.query("update caring_contacts.plans set mobile_check_state = $1 where id = $2", [
+          value,
+          "PLAN-MOBILE-CHECK",
+        ]);
+      });
+    await expect(setState("awaitingConfirmation", "a")).resolves.toBeUndefined();
+    await expect(setState("checked", "b")).rejects.toThrow(/plans_mobile_check_state_shape/);
+
+    const { rows: comments } = await pool.query<{ description: string | null }>(
+      `select pg_catalog.col_description('caring_contacts.plans'::regclass, a.attnum) as description
+         from pg_catalog.pg_attribute a
+        where a.attrelid = 'caring_contacts.plans'::regclass and a.attname = 'mobile_check_state'`,
+    );
+    expect(comments[0].description).toContain("No patient content");
+  });
+
   it("holds the preferred name nullable, undefaulted, unbackfilled, and bounded", async () => {
     // Migration 0007. Four properties, each a real defect if it were otherwise:
     //

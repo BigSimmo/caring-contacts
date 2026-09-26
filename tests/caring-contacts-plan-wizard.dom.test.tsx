@@ -140,10 +140,29 @@ async function reachReviewStage(user: ReturnType<typeof userEvent.setup>) {
   await reachPersonalisationStage(user);
   await user.type(screen.getByLabelText(/Patient.s name/i), "Rowan Example");
   await user.type(screen.getByLabelText(/What should we call them in messages/i), "Rowan");
-  await user.type(screen.getByLabelText(/Mobile number this plan will use/i), FICTIONAL_PATIENT_MOBILES[1]);
+  await typeMobileTwice(user, document.body, FICTIONAL_PATIENT_MOBILES[1]);
   await user.click(screen.getByRole("radio", { name: /Morning/ }));
   await user.click(screen.getByRole("button", { name: /^Continue to review/ }));
   return screen.getByRole("region", { name: "Review and activation" });
+}
+
+/**
+ * Types the mobile number into both boxes and waits for the shared-number check to answer.
+ *
+ * The default `fetch` stub (see `beforeEach`) answers that no other patient has the number, so the
+ * stage is released once the answer lands.
+ */
+async function typeMobileTwice(user: ReturnType<typeof userEvent.setup>, scope: HTMLElement, mobile: string) {
+  await user.type(within(scope).getByLabelText(/Mobile number this plan will use/i), mobile);
+  await user.type(within(scope).getByLabelText(/Type the mobile number again/i), mobile);
+  await within(scope).findByText(/No other patient in your team's active plans has this mobile number/i);
+}
+
+/** The shared-number check's endpoint, answered by every stub in this file before anything else. */
+const SHARED_MOBILE_PATH = "/api/caring-contacts/patients/shared-mobile";
+
+function isSharedMobileCheck(input: unknown): boolean {
+  return String(input instanceof Request ? input.url : input).endsWith(SHARED_MOBILE_PATH);
 }
 
 /** The discharge day every stage-4 case works from, and the days the schedule allows around it. */
@@ -232,9 +251,11 @@ function stubFetch(answer: () => Promise<Response>) {
   return vi
     .spyOn(globalThis, "fetch")
     .mockImplementation(async (input) =>
-      String(input).endsWith("/api/caring-contacts/plans")
-        ? answer()
-        : jsonResponse({ value: { plan: { id: "SYN-PLAN-X", state: "active", version: 2 } } }),
+      isSharedMobileCheck(input)
+        ? jsonResponse({ value: { sharedWith: 0 } })
+        : String(input).endsWith("/api/caring-contacts/plans")
+          ? answer()
+          : jsonResponse({ value: { plan: { id: "SYN-PLAN-X", state: "active", version: 2 } } }),
     );
 }
 
@@ -270,6 +291,14 @@ beforeEach(() => {
   // jsdom reports 1024px; the overlay host needs a width to choose a modality at all.
   Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
   window.history.pushState(null, "", "/caring-contacts/plans/new");
+  // The shared-number check runs once the mobile is typed twice. By default it answers that no other
+  // patient has the number, and anything else a case did not stub fails the way an unreachable
+  // service would. Cases about the check itself, and the write cases, replace this.
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) =>
+    isSharedMobileCheck(input)
+      ? jsonResponse({ value: { sharedWith: 0 } })
+      : Promise.reject(new TypeError("Failed to fetch")),
+  );
 });
 
 afterEach(() => {
@@ -766,7 +795,7 @@ describe("the caring-contacts plan wizard — stage 3, personalisation (Ruling [
     // own typing as an imported governed value would be a lie about provenance on the screen that
     // decides where messages physically go.
     expect(within(stage).getByLabelText(/patient.s name/i)).toHaveValue("");
-    expect(within(stage).getByLabelText(/mobile number/i)).toHaveValue("");
+    expect(within(stage).getByLabelText(/Mobile number this plan will use/i)).toHaveValue("");
     expect(stage.textContent ?? "").not.toMatch(/imported from the synthetic referral/i);
     expect(stage.textContent ?? "").not.toMatch(/governed value present/i);
   });
@@ -777,7 +806,7 @@ describe("the caring-contacts plan wizard — stage 3, personalisation (Ruling [
     await reachPersonalisationStage(user);
 
     await user.type(screen.getByLabelText(/patient.s name/i), "Rowan Example");
-    await user.type(screen.getByLabelText(/mobile number/i), FICTIONAL_PATIENT_MOBILES[1]);
+    await user.type(screen.getByLabelText(/Mobile number this plan will use/i), FICTIONAL_PATIENT_MOBILES[1]);
 
     const draft = readPlanDraft(REFERRAL);
     expect(draft?.patientDetail.patientName).toBe("Rowan Example");
@@ -788,7 +817,7 @@ describe("the caring-contacts plan wizard — stage 3, personalisation (Ruling [
     renderWizard();
     expect(await screen.findByRole("region", { name: "Personalisation" })).toBeInTheDocument();
     expect(screen.getByLabelText(/patient.s name/i)).toHaveValue("Rowan Example");
-    expect(screen.getByLabelText(/mobile number/i)).toHaveValue(FICTIONAL_PATIENT_MOBILES[1]);
+    expect(screen.getByLabelText(/Mobile number this plan will use/i)).toHaveValue(FICTIONAL_PATIENT_MOBILES[1]);
   });
 
   it("says what is still missing, in words, tied to the control it is about", async () => {
@@ -797,7 +826,7 @@ describe("the caring-contacts plan wizard — stage 3, personalisation (Ruling [
     const stage = await reachPersonalisationStage(user);
 
     const name = within(stage).getByLabelText(/patient.s name/i);
-    const mobile = within(stage).getByLabelText(/mobile number/i);
+    const mobile = within(stage).getByLabelText(/Mobile number this plan will use/i);
     for (const field of [name, mobile]) {
       const described = (field.getAttribute("aria-describedby") ?? "")
         .split(/\s+/)
@@ -843,7 +872,7 @@ describe("stage 3 — the message's name is asked for, never split off the store
     const stage = await reachPersonalisationStage(user);
 
     await user.type(within(stage).getByLabelText(/patient.s name/i), "Rowan Example");
-    await user.type(within(stage).getByLabelText(/mobile number/i), FICTIONAL_PATIENT_MOBILES[1]);
+    await typeMobileTwice(user, stage, FICTIONAL_PATIENT_MOBILES[1]);
     await user.click(within(stage).getByRole("radio", { name: /Morning/ }));
 
     const preferred = within(stage).getByLabelText(/what should we call them in messages/i);
@@ -898,7 +927,7 @@ describe("stage 3 — the mobile number is required and nothing here connects (R
     const user = userEvent.setup();
     renderWizard();
     const stage = await reachPersonalisationStage(user);
-    const mobile = within(stage).getByLabelText(/mobile number/i);
+    const mobile = within(stage).getByLabelText(/Mobile number this plan will use/i);
 
     // ROUND 1, I-2. The caution used to be an entire `<p role="status">` CREATED when the condition
     // became true. A live region inserted along with its content is unreliably announced — the
@@ -928,7 +957,7 @@ describe("stage 3 — the mobile number is required and nothing here connects (R
     const user = userEvent.setup();
     renderWizard();
     const stage = await reachPersonalisationStage(user);
-    const mobile = within(stage).getByLabelText(/mobile number/i);
+    const mobile = within(stage).getByLabelText(/Mobile number this plan will use/i);
 
     await user.type(mobile, "+61 400 000 000");
     expect(stage.textContent ?? "").toMatch(/not one of the reserved fictional numbers/i);
@@ -945,7 +974,7 @@ describe("stage 3 — the mobile number is required and nothing here connects (R
     const user = userEvent.setup();
     renderWizard();
     const stage = await reachPersonalisationStage(user);
-    const mobile = within(stage).getByLabelText(/mobile number/i);
+    const mobile = within(stage).getByLabelText(/Mobile number this plan will use/i);
 
     await user.type(mobile, "123");
     expect(stage.textContent ?? "").toMatch(/Enter an Australian mobile number/);
@@ -956,6 +985,187 @@ describe("stage 3 — the mobile number is required and nothing here connects (R
     expect(stage.textContent ?? "").toMatch(/looks like a landline/);
   });
 });
+
+describe("stage 3 — the mobile number is typed twice and checked against the team's other plans", () => {
+  /** Everything on stage 3 except the second entry of the mobile number. */
+  async function fillAllButTheSecondEntry(user: ReturnType<typeof userEvent.setup>, stage: HTMLElement) {
+    await user.type(within(stage).getByLabelText(/patient.s name/i), "Rowan Example");
+    await user.type(within(stage).getByLabelText(/what should we call them in messages/i), "Rowan");
+    await user.type(within(stage).getByLabelText(/Mobile number this plan will use/i), "0491 570 156");
+    await user.click(within(stage).getByRole("radio", { name: /Morning/ }));
+  }
+
+  function forward(stage: HTMLElement) {
+    return within(stage).getByRole("button", { name: /^Continue to review/ });
+  }
+
+  it("blocks Continue until the number is typed again, and says why beside the box", async () => {
+    const user = userEvent.setup();
+    renderWizard();
+    const stage = await reachPersonalisationStage(user);
+    await fillAllButTheSecondEntry(user, stage);
+
+    const again = within(stage).getByLabelText(/Type the mobile number again/i);
+    expect(again).toHaveAttribute("aria-invalid", "true");
+    const described = (again.getAttribute("aria-describedby") ?? "")
+      .split(/\s+/)
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ");
+    expect(described).toMatch(/Type the mobile number again/i);
+    expect(forward(stage)).toBeDisabled();
+    expect(stage.textContent ?? "").toMatch(/Before this plan can be reviewed:.*Type the mobile number again/);
+  });
+
+  it("refuses a second entry that differs by one digit, and names the mismatch", async () => {
+    const user = userEvent.setup();
+    const fetched = vi.mocked(globalThis.fetch);
+    renderWizard();
+    const stage = await reachPersonalisationStage(user);
+    await fillAllButTheSecondEntry(user, stage);
+
+    const again = within(stage).getByLabelText(/Type the mobile number again/i);
+    await user.type(again, "0491 570 165");
+    expect(again).toHaveAttribute("aria-invalid", "true");
+    expect(stage.textContent ?? "").toMatch(/The two mobile numbers do not match/);
+    expect(forward(stage)).toBeDisabled();
+    // Nothing is asked of the service about a number the two entries disagree on.
+    expect(fetched.mock.calls.some(([input]) => isSharedMobileCheck(input))).toBe(false);
+  });
+
+  it("accepts the same number written +61 in one box and 0 in the other, including when pasted", async () => {
+    const user = userEvent.setup();
+    renderWizard();
+    const stage = await reachPersonalisationStage(user);
+    await fillAllButTheSecondEntry(user, stage);
+
+    const again = within(stage).getByLabelText(/Type the mobile number again/i);
+    // Pasting is not blocked: the box compares, it does not fight the clipboard.
+    await user.click(again);
+    await user.paste("+61491570156");
+    expect(again).toHaveValue("+61491570156");
+    expect(again).toHaveAttribute("aria-invalid", "false");
+    expect(stage.textContent ?? "").not.toMatch(/do not match/);
+    await within(stage).findByText(/No other patient in your team's active plans has this mobile number/i);
+    expect(forward(stage)).toBeEnabled();
+  });
+
+  it("asks the service once the entries match, with the number in the body and never the URL", async () => {
+    const user = userEvent.setup();
+    const fetched = vi.mocked(globalThis.fetch);
+    renderWizard();
+    const stage = await reachPersonalisationStage(user);
+    await fillAllButTheSecondEntry(user, stage);
+    await typeSecondEntry(user, stage, "0491570156");
+    await within(stage).findByText(/No other patient/i);
+
+    const calls = fetched.mock.calls.filter(([input]) => isSharedMobileCheck(input));
+    expect(calls).toHaveLength(1);
+    const [input, init] = calls[0];
+    expect(String(input)).toBe(SHARED_MOBILE_PATH);
+    expect(String(input)).not.toMatch(/491/);
+    expect((init as RequestInit).method).toBe("POST");
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({ mobile: "+61491570156" });
+  });
+
+  it("warns when another patient has the number, and holds Continue until the tick", async () => {
+    const user = userEvent.setup();
+    vi.mocked(globalThis.fetch).mockImplementation(async (input) =>
+      isSharedMobileCheck(input)
+        ? jsonResponse({ value: { sharedWith: 1 } })
+        : Promise.reject(new TypeError("Failed to fetch")),
+    );
+    renderWizard();
+    const stage = await reachPersonalisationStage(user);
+    await fillAllButTheSecondEntry(user, stage);
+    await typeSecondEntry(user, stage, "0491 570 156");
+
+    expect(
+      await within(stage).findByText(
+        "Another patient in your team's active plans has this mobile number. Check it with the patient before continuing.",
+      ),
+    ).toBeInTheDocument();
+    expect(forward(stage)).toBeDisabled();
+
+    const tick = within(stage).getByRole("checkbox", { name: "I have checked this number is right" });
+    await user.click(tick);
+    expect(forward(stage)).toBeEnabled();
+
+    // A changed number does not inherit the tick given to the previous one.
+    const first = within(stage).getByLabelText(/Mobile number this plan will use/i);
+    const again = within(stage).getByLabelText(/Type the mobile number again/i);
+    await user.clear(first);
+    await user.type(first, "0491 570 006");
+    await user.clear(again);
+    await user.type(again, "0491 570 006");
+    await within(stage).findByText(/Another patient in your team's active plans has this mobile number/);
+    expect(within(stage).getByRole("checkbox", { name: "I have checked this number is right" })).not.toBeChecked();
+    expect(forward(stage)).toBeDisabled();
+  });
+
+  it("says the check could not run when it fails, and still requires the tick", async () => {
+    const user = userEvent.setup();
+    vi.mocked(globalThis.fetch).mockImplementation(async (input) =>
+      isSharedMobileCheck(input)
+        ? jsonResponse({ refusal: "access-audit-unavailable" }, 503)
+        : Promise.reject(new TypeError("Failed to fetch")),
+    );
+    renderWizard();
+    const stage = await reachPersonalisationStage(user);
+    await fillAllButTheSecondEntry(user, stage);
+    await typeSecondEntry(user, stage, "0491 570 156");
+
+    expect(await within(stage).findByText(/could not run/)).toBeInTheDocument();
+    expect(stage.textContent ?? "").not.toMatch(/No other patient/);
+    expect(forward(stage)).toBeDisabled();
+    await user.click(within(stage).getByRole("checkbox", { name: "I have checked this number is right" }));
+    expect(forward(stage)).toBeEnabled();
+  });
+
+  it("never writes the second entry into the draft, so a refresh asks for it again", async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderWizard();
+    const stage = await reachPersonalisationStage(user);
+    await fillAllButTheSecondEntry(user, stage);
+    await typeSecondEntry(user, stage, "0491 570 156");
+    await within(stage).findByText(/No other patient/i);
+
+    const stored = window.sessionStorage.getItem(PLAN_DRAFT_STORAGE_KEY) ?? "";
+    expect(stored).toContain("0491 570 156");
+    expect(stored.split("0491 570 156")).toHaveLength(2);
+
+    unmount();
+    renderWizard();
+    const again = await screen.findByLabelText(/Type the mobile number again/i);
+    expect(again).toHaveValue("");
+    expect(screen.getByRole("button", { name: /^Continue to review/ })).toBeDisabled();
+  });
+
+  it("asks for the second entry even when the number was filled in from intake", async () => {
+    const user = userEvent.setup();
+    renderWizard({
+      intakePrefill: {
+        patientIdentifier: "UR-00219384",
+        givenName: "Rowan",
+        familyName: "Example",
+        mobileNumber: FICTIONAL_PATIENT_MOBILES[1],
+        dischargeDate: "2026-03-10T12:00:00+08:00",
+        hospitalFacility: "Royal Perth Hospital",
+        cohort: "adult_crisis",
+        admittingWard: "",
+        clinicalSummary: "",
+        safetyAlerts: [],
+      } as NonNullable<PlanWizardProps["intakePrefill"]>,
+    });
+    const stage = await reachPersonalisationStage(user);
+    expect(within(stage).getByLabelText(/Mobile number this plan will use/i)).toHaveValue(FICTIONAL_PATIENT_MOBILES[1]);
+    expect(within(stage).getByLabelText(/Type the mobile number again/i)).toHaveValue("");
+  });
+});
+
+/** Types the second entry only. */
+async function typeSecondEntry(user: ReturnType<typeof userEvent.setup>, scope: HTMLElement, mobile: string) {
+  await user.type(within(scope).getByLabelText(/Type the mobile number again/i), mobile);
+}
 
 describe("provenance when the referral was saved with an intake name and mobile", () => {
   const INTAKE = {
@@ -1011,6 +1221,9 @@ describe("stage 3 — cultural identity is NOT asked for (owner decision, round 
       "caring-contacts-patient-name",
       "caring-contacts-preferred-name",
       "caring-contacts-patient-mobile",
+      // The same number typed again, compared and never stored. Not a new fact collected about the
+      // patient -- a second reading of the one above.
+      "caring-contacts-patient-mobile-again",
       "caring-contacts-patient-identifiers",
     ]);
   });
@@ -1077,7 +1290,7 @@ describe("stage 3 — cultural identity is NOT asked for (owner decision, round 
 
     await user.type(within(stage).getByLabelText(/patient.s name/i), "Rowan Example");
     await user.type(within(stage).getByLabelText(/what should we call them in messages/i), "Rowan");
-    await user.type(within(stage).getByLabelText(/mobile number/i), FICTIONAL_PATIENT_MOBILES[1]);
+    await typeMobileTwice(user, stage, FICTIONAL_PATIENT_MOBILES[1]);
     await user.click(within(stage).getByRole("radio", { name: /Morning/ }));
 
     expect(stage.textContent ?? "").toMatch(/nothing else is needed/i);
@@ -1139,7 +1352,7 @@ describe("stage 3 — validation before advancing (Ruling [115], round 1 finding
 
     await user.type(within(stage).getByLabelText(/patient.s name/i), "Rowan Example");
     await user.type(within(stage).getByLabelText(/what should we call them in messages/i), "Rowan");
-    await user.type(within(stage).getByLabelText(/mobile number/i), FICTIONAL_PATIENT_MOBILES[1]);
+    await typeMobileTwice(user, stage, FICTIONAL_PATIENT_MOBILES[1]);
     await user.click(within(stage).getByRole("radio", { name: /Morning/ }));
     expect(within(stage).getByRole("button", { name: /^Continue to review/ })).toBeEnabled();
   });

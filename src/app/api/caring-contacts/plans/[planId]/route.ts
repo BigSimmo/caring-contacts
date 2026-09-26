@@ -1,6 +1,7 @@
 // src/app/api/caring-contacts/plans/[planId]/route.ts
 //
-// One plan. GET reads it; POST moves it through its lifecycle.
+// One plan. GET reads it; POST moves it through its lifecycle, records a hospital event
+// (readmission, death, death correction) or edits the contact detail it sends to.
 //
 // Next 16: `params` is a Promise and must be awaited (`context.params` became a promise in 15.0).
 // The plan identifier is a synthetic id, never a name, so it is safe in the path -- everything
@@ -17,8 +18,12 @@ import {
 } from "@/lib/caring-contacts-server/handler";
 import { activationWordingRefusal } from "@/lib/caring-contacts-server/contact-sender";
 import { isAccessObjectIdShape } from "@/lib/caring-contacts/access-audit";
+import { awstCalendarDay, awstWallTimeToInstant, systemClock } from "@/lib/caring-contacts/clock";
+import type { HospitalStatusEvent } from "@/lib/caring-contacts/hospital-events";
 import { planId } from "@/lib/caring-contacts/ids";
 import type { CaringContactAction } from "@/lib/caring-contacts/permissions";
+import type { ContactDetailOutcome, HospitalStatusOutcome, PlanRecord } from "@/lib/caring-contacts/repository";
+import { isAwstCalendarDay } from "@/lib/caring-contacts/schedule";
 
 export const runtime = "nodejs";
 
@@ -48,17 +53,70 @@ const lifecycleSchema = z.discriminatedUnion("action", [
       ...common,
     })
     .strict(),
+  // A hospital event recorded from the plan screen. The store composes ./hospital-events, so what
+  // each one does (pause, cancel for good, raise an incident) is decided there, not here. `diedOn`
+  // is the AWST calendar day of a death, when the staff member knows it; it is accepted with a
+  // death and nothing else.
+  z
+    .object({
+      action: z.literal("recordEvent"),
+      event: z.enum(["readmission", "death", "deathCorrection"]),
+      diedOn: z.string().refine(isAwstCalendarDay, { message: "must be a calendar day, YYYY-MM-DD" }).optional(),
+      ...common,
+    })
+    .strict()
+    .refine((body) => body.diedOn === undefined || body.event === "death", {
+      message: "a date of death belongs with a death",
+    }),
+  // An edit to the name, preferred name or mobile number. The rules (blank name, sendable preferred
+  // name, Australian mobile) are the domain's -- `admitContactDetailEdit` -- and refused there by
+  // name, so they are not restated here. The values travel in the body and never reach an audit
+  // event: the store records WHICH fields changed.
+  z
+    .object({
+      action: z.literal("updateContactDetail"),
+      patientName: z.string().max(200).optional(),
+      preferredName: z.string().max(200).nullable().optional(),
+      patientMobileNumber: z.string().max(32).optional(),
+      ...common,
+    })
+    .strict(),
 ]);
 
+type LifecycleBody = z.infer<typeof lifecycleSchema>;
+
+/**
+ * A death and its correction are gated on the capability every role holds as well as on
+ * `recordHospitalStatusEvent`, exactly as the store gates them: recording a death must never be
+ * blocked by a permission check. The boundary therefore checks the always-held one for those two,
+ * and the store makes the any-of decision itself.
+ */
+function capabilityFor(body: LifecycleBody): CaringContactAction {
+  if (body.action === "recordEvent") {
+    return body.event === "readmission" ? "recordHospitalStatusEvent" : "triggerServiceSafetyStop";
+  }
+  if (body.action === "updateContactDetail") return "recordHospitalStatusEvent";
+  return LIFECYCLE_ACTIONS[body.action];
+}
+
+/** A death is recorded at 00:00 Australia/Perth on the day given, or at the server's now. */
+function hospitalEventFor(body: Extract<LifecycleBody, { action: "recordEvent" }>, now: Date): HospitalStatusEvent {
+  if (body.event === "death") {
+    return { type: "death", recordedAt: body.diedOn === undefined ? now : awstWallTimeToInstant(body.diedOn, 0) };
+  }
+  return { type: body.event };
+}
+
 /** The capability the store itself checks for each transition -- not a broader stand-in for them. */
-const LIFECYCLE_ACTIONS: Readonly<Record<z.infer<typeof lifecycleSchema>["action"], CaringContactAction>> =
-  Object.freeze({
-    activate: "activatePlan",
-    pause: "pausePlan",
-    resume: "resumePlan",
-    cancelDraft: "claimPlan",
-    withdraw: "withdrawPlan",
-  });
+const LIFECYCLE_ACTIONS: Readonly<
+  Record<Exclude<LifecycleBody["action"], "recordEvent" | "updateContactDetail">, CaringContactAction>
+> = Object.freeze({
+  activate: "activatePlan",
+  pause: "pausePlan",
+  resume: "resumePlan",
+  cancelDraft: "claimPlan",
+  withdraw: "withdrawPlan",
+});
 
 export async function GET(request: NextRequest, context: PlanRouteContext): Promise<Response> {
   const { planId: id } = await context.params;
@@ -74,9 +132,9 @@ export async function GET(request: NextRequest, context: PlanRouteContext): Prom
 export async function POST(request: NextRequest, context: PlanRouteContext): Promise<Response> {
   const { planId: id } = await context.params;
   if (!isAccessObjectIdShape(id)) return invalidRequestResponse();
-  return writeHandler({
+  return writeHandler<LifecycleBody, PlanRecord | HospitalStatusOutcome | ContactDetailOutcome>({
     schema: lifecycleSchema,
-    action: (body) => LIFECYCLE_ACTIONS[body.action],
+    action: capabilityFor,
     access: { objectType: "plan", objectId: () => id },
     write: async (store, actor, body) => {
       const write = writeContextFor(actor, body.idempotencyKey);
@@ -97,6 +155,23 @@ export async function POST(request: NextRequest, context: PlanRouteContext): Pro
           return store.cancelDraftPlan(input, write);
         case "withdraw":
           return store.withdrawPlan({ ...input, origin: body.origin, reason: body.reason }, write);
+        case "recordEvent": {
+          const now = systemClock().now();
+          if (body.diedOn !== undefined && body.diedOn > awstCalendarDay(now)) {
+            return { ok: false, reason: "death-date-in-future" };
+          }
+          return store.recordHospitalStatusEvent({ ...input, event: hospitalEventFor(body, now) }, write);
+        }
+        case "updateContactDetail":
+          return store.updatePatientContactDetail(
+            {
+              ...input,
+              patientName: body.patientName,
+              preferredName: body.preferredName,
+              patientMobileNumber: body.patientMobileNumber,
+            },
+            write,
+          );
       }
     },
   })(request);
