@@ -85,6 +85,40 @@ it was removed (`message-copy.ts:189-199`). And "and this reply is automatic" ex
 person told "no one reads replies" who then receives a reply could reasonably conclude somebody
 read theirs first.
 
+### Message C — the automatic reply to an incoming text (added 2026-09-26)
+
+**Where:** `INBOUND_AUTO_REPLY_MESSAGE` in `src/lib/caring-contacts/message-copy.ts` (end of file).
+**Status in code:** `PROVISIONAL — not clinically approved`. Needs clinical and lived-experience
+sign-off before any real patient receives it.
+**Sent to:** every person who texts the service's number — a patient, a family member, or a number
+the service has never seen — **at most once per number per 24 hours**, so two automatic systems
+cannot text each other in a loop. It is the same for everyone, including someone who texted STOP.
+
+```
+This number isn't monitored. For help now call 000, Lifeline 13 11 14, or the Mental Health Emergency Response Line 1300 555 788 (Perth) or 1800 676 822 (Peel).
+```
+
+Exactly 160 characters: one standard text message. The owner asked for this wording's content
+("this number isn't monitored, call 000, Lifeline or the Mental Health Emergency Response Line").
+
+What the reviewer should decide, and why it was written this way:
+
+- **It replaces Message B in practice.** Nothing in the code sends Message B; before 2026-09-26 an
+  incoming text went nowhere at all. Message B names the prototype's invented staffed line
+  (`+61 491 570 157`), and the message rules refuse to send an invented number to a real phone, so
+  it could never have been sent for real. Message C names only real lines, taken from
+  `docs/caring-contacts-crisis-lines.md`. 13YARN and Rurallink did not fit in one message and were
+  left out; the reviewer should decide whether that is acceptable or whether a second segment is
+  worth the cost.
+- **"Isn't monitored" is the honest claim.** A reply from a known patient is now kept and shown to
+  a clinician as a "reply to check" — but only when a person next opens the workspace, which could
+  be hours or a weekend away. The message therefore promises no response and asks no question.
+- **The same words for STOP.** A STOP-type reply pauses the patient's plan for a person to review,
+  but the automatic reply does not say so: it goes to unknown numbers too, and saying "your messages
+  are paused" would confirm to whoever holds the phone that this person is enrolled. Whether a
+  patient who texts STOP should be told anything more is a decision for this review.
+- **It conflicts with the no-reply notice (§2).** See the note added there.
+
 ### Message type `first` — NOT AUTHORED
 
 **Where the absence is recorded:** `src/lib/caring-contacts-server/demo-seed.ts:128` (`first: ""`).
@@ -121,6 +155,16 @@ for this pack.
 
 **The decision:** is "No one reads replies to this number" the right thing to tell a person in
 suicide aftercare about a channel that receives but discards?
+
+**Changed 2026-09-26 — this notice is now untrue for patients.** Incoming texts are no longer
+discarded. A reply from a number held on a patient's plan is kept with the plan and shown to
+clinicians on the Today screen and the patient's page, where someone reads it and marks it followed
+up. "No one reads replies to this number" — and Message B's "No one at Example Aftercare Team reads
+this number" — therefore now say something false to exactly the people they are sent to. Neither was
+reworded here, because changing governed wording is this review's decision, not an implementer's.
+The review must replace both before real sending, and should decide the replacement together with
+Message C (for example: replies are read by the team during working hours, not straight away, and
+here is who to call now).
 
 ## 3. The crisis-support sentence — the owner's own words
 
@@ -194,8 +238,8 @@ patient.
 Drafted, not prescribed. The facilitator should change it.
 
 1. Read Message A aloud, in full, as a person would receive it on a phone.
-2. Read Message B — what a person gets when they reach out.
-3. Discuss the no-reply notice (§2): does it tell the truth in a way that helps?
+2. Read Message B, then Message C — Message C is what a person who texts back actually receives.
+3. Discuss the no-reply notice (§2): it is now untrue for patients' replies, which are read.
 4. Discuss the two unwritten messages (`first`, `closing`), longest on `closing`.
 5. Note the fictional staffed line: a real number and real hours have to exist before any of this
    is sendable.
@@ -209,9 +253,10 @@ every screen showing the wording changes with it. Do not retype the outcome onto
 
 1. **The original review pack's content, structure and any prior review notes.** Never present in
    this repository; this document is a reconstruction from the code.
-2. **The Lifeline `13 11 14` and 13YARN `13 92 76` numbers.** No source and no verification date is
-   recorded anywhere in the repository, and no check ages them. To verify — no network access in
-   this session.
+2. **The Lifeline `13 11 14` and 13YARN `13 92 76` numbers**, and the Mental Health Emergency
+   Response Line numbers `1300 555 788` (Perth) and `1800 676 822` (Peel) in Message C. No source and
+   no verification date is recorded anywhere in the repository, and no check ages them. To verify —
+   no network access in this session.
 3. **That the two patient-visible strings above are the complete set.** They are the complete set
    reachable from `src/lib/caring-contacts/message-copy.ts` and the demo seed's
    `messageTextByType`. A pathway version stored in a database carries its own message text

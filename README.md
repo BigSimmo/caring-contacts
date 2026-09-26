@@ -299,3 +299,24 @@ do (accounts, credentials and sign-off).
 - Not re-run this round: the Australian container build (it built and ran in the second round;
   this round added one small library, `jose`, for sign-in). Sign-in and Telstra sending are tested
   only against offline stand-ins, never a real provider.
+
+### Replies to the service's number (26 September 2026)
+
+Texts sent back to the service used to vanish. Now:
+
+- **Everyone who texts the number gets one automatic reply**, at most once a day per number:
+  "This number isn't monitored. For help now call 000, Lifeline 13 11 14, or the Mental Health
+  Emergency Response Line 1300 555 788 (Perth) or 1800 676 822 (Peel)." This wording is
+  provisional and needs clinical sign-off (`docs/caring-contacts/message-review-pack.md`,
+  Message C).
+- **A reply from a patient's number becomes a "reply to check"** on the Today screen and on the
+  patient's page, where a clinician reads it and presses "Mark followed up". Only roles that may
+  read the patient's record can see the words.
+- **STOP and similar words pause the plan** for a person to decide what happens next. Nothing is
+  withdrawn or cancelled automatically, because "stop, I can't do this anymore" could mean anything.
+- **Needs a new setting:** `CARING_CONTACTS_INBOUND_WEBHOOK_SECRET` (at least 32 characters). Without
+  it the incoming-text address does not exist. How Telstra delivers incoming texts has not been
+  confirmed and must be tested with a staff phone first.
+- **One thing that is now untrue:** the existing message wording tells patients "No one reads
+  replies to this number". Replies from patients are now read, so that sentence must be reworded
+  by the clinical review before real sending (hazard H-C38).

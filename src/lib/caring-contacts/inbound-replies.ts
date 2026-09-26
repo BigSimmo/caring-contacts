@@ -105,7 +105,9 @@ export function admitInboundReplyText(raw: string): string | null {
   const characters = [...trimmed];
   return characters.length <= INBOUND_REPLY_TEXT_MAX_LENGTH
     ? trimmed
-    : characters.slice(0, INBOUND_REPLY_TEXT_MAX_LENGTH).join("");
+    : // Trimmed again after the cut, so admitting an admitted text changes nothing: both stores
+      // re-admit the text they are handed and refuse it if that changes it.
+      characters.slice(0, INBOUND_REPLY_TEXT_MAX_LENGTH).join("").trimEnd();
 }
 
 /** A reply's identifier: `reply-` and a URL-safe token. Never derived from the number or the text. */
