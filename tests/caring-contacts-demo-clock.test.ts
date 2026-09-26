@@ -79,6 +79,7 @@ describe("CaringContactsTimeProvider (Demo Clock)", () => {
       completedAt: null,
       outcome: "inProgress",
       assuranceAttestations: [],
+      mobileCheck: { state: "notChecked", sentAt: null, resolvedAt: null },
       contacts: [
         {
           contact: {

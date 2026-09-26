@@ -4273,6 +4273,404 @@ export function describeCaringContactRepositoryContract(label: string, factory: 
     // is not hypothetical. One representative write per new group, checked for the exact event it
     // must append and for the fact that it appends exactly one.
     // -------------------------------------------------------------------------
+    describe("patient updates and the number check (mobile-check)", () => {
+      const NEW_MOBILE = "0491 570 159";
+      const NEW_MOBILE_STORED = "+61 491 570 159";
+      const MOBILE_DIGITS = /491\s?570\s?15\d/;
+
+      async function auditTrailText(store: CaringContactRepository): Promise<string> {
+        return JSON.stringify(await store.listAuditEvents({ actor: AUDITOR_A }));
+      }
+
+      it("creates every plan with its number not yet checked, on the write and on every read", async () => {
+        const store = await newStore();
+        const draft = await createActivePlan(store, { leaveAsDraft: true });
+        const unchecked = { state: "notChecked", sentAt: null, resolvedAt: null };
+        expect(draft.mobileCheck).toEqual(unchecked);
+        expect((await store.getPlan(draft.plan.id, { actor: COORDINATOR_A }))?.mobileCheck).toEqual(unchecked);
+        const listed = (await store.listPlans({ actor: COORDINATOR_A })).find(
+          (record) => record.plan.id === draft.plan.id,
+        );
+        expect(listed?.mobileCheck).toEqual(unchecked);
+      });
+
+      it("records a sent test, moves the version on once, and appends exactly one audit event", async () => {
+        const store = await newStore();
+        const draft = await createActivePlan(store, { leaveAsDraft: true });
+        const before = await store.listAuditEvents({ actor: AUDITOR_A });
+
+        const sent = unwrap(
+          await store.recordMobileCheckSent(
+            { planId: draft.plan.id, expectedVersion: draft.plan.version },
+            writeContext(COORDINATOR_A, `mc-send-${draft.plan.id}`),
+          ),
+        );
+
+        expect(sent.mobileCheck).toEqual({
+          state: "awaitingConfirmation",
+          sentAt: new Date(NOW).toISOString(),
+          resolvedAt: null,
+        });
+        expect(sent.plan).toEqual({ ...draft.plan, version: draft.plan.version + 1 });
+        const after = await store.listAuditEvents({ actor: AUDITOR_A });
+        expect(after.slice(before.length).map((event) => [event.action, event.outcome])).toEqual([
+          ["recordMobileCheckSent", "allowed"],
+        ]);
+        // What the store returns is what it holds.
+        expect(await store.getPlan(draft.plan.id, { actor: COORDINATOR_A })).toEqual(sent);
+      });
+
+      it("refuses to start the plan while the test is unanswered, and starts it once it arrived", async () => {
+        const store = await newStore();
+        const draft = await createActivePlan(store, { leaveAsDraft: true });
+        const sent = unwrap(
+          await store.recordMobileCheckSent(
+            { planId: draft.plan.id, expectedVersion: draft.plan.version },
+            writeContext(COORDINATOR_A, `mc-gate-send-${draft.plan.id}`),
+          ),
+        );
+
+        expect(
+          await store.activatePlan(
+            { planId: draft.plan.id, expectedVersion: sent.plan.version },
+            writeContext(COORDINATOR_A, `mc-gate-activate-1-${draft.plan.id}`),
+          ),
+        ).toEqual({ ok: false, reason: REPOSITORY_REFUSALS.mobileCheckUnconfirmed });
+        expect((await store.getPlan(draft.plan.id, { actor: COORDINATOR_A }))?.plan.state).toBe("draft");
+
+        const confirmed = unwrap(
+          await store.resolveMobileCheck(
+            { planId: draft.plan.id, expectedVersion: sent.plan.version, outcome: "received" },
+            writeContext(COORDINATOR_A, `mc-gate-confirm-${draft.plan.id}`),
+          ),
+        );
+        expect(confirmed.mobileCheck).toEqual({
+          state: "confirmed",
+          sentAt: new Date(NOW).toISOString(),
+          resolvedAt: new Date(NOW).toISOString(),
+        });
+
+        const activated = unwrap(
+          await store.activatePlan(
+            { planId: draft.plan.id, expectedVersion: confirmed.plan.version },
+            writeContext(COORDINATOR_A, `mc-gate-activate-2-${draft.plan.id}`),
+          ),
+        );
+        expect(activated.plan.state).toBe("active");
+      });
+
+      it("refuses to start or restart the plan when the test did not arrive", async () => {
+        const store = await newStore();
+        const plan = await createActivePlan(store);
+        const paused = unwrap(
+          await store.pausePlan(
+            { planId: plan.plan.id, expectedVersion: plan.plan.version },
+            writeContext(COORDINATOR_A, `mc-nr-pause-${plan.plan.id}`),
+          ),
+        );
+        const sent = unwrap(
+          await store.recordMobileCheckSent(
+            { planId: plan.plan.id, expectedVersion: paused.plan.version },
+            writeContext(COORDINATOR_A, `mc-nr-send-${plan.plan.id}`),
+          ),
+        );
+        // Unanswered: resume refused.
+        expect(
+          await store.resumePlan(
+            { planId: plan.plan.id, expectedVersion: sent.plan.version },
+            writeContext(COORDINATOR_A, `mc-nr-resume-1-${plan.plan.id}`),
+          ),
+        ).toEqual({ ok: false, reason: REPOSITORY_REFUSALS.mobileCheckUnconfirmed });
+        const notReceived = unwrap(
+          await store.resolveMobileCheck(
+            { planId: plan.plan.id, expectedVersion: sent.plan.version, outcome: "notReceived" },
+            writeContext(COORDINATOR_A, `mc-nr-answer-${plan.plan.id}`),
+          ),
+        );
+        expect(notReceived.mobileCheck.state).toBe("notReceived");
+        // Did not arrive: still refused.
+        expect(
+          await store.resumePlan(
+            { planId: plan.plan.id, expectedVersion: notReceived.plan.version },
+            writeContext(COORDINATOR_A, `mc-nr-resume-2-${plan.plan.id}`),
+          ),
+        ).toEqual({ ok: false, reason: REPOSITORY_REFUSALS.mobileCheckUnconfirmed });
+        // Pausing is never gated: stopping messages must always be possible.
+        expect((await store.getPlan(plan.plan.id, { actor: COORDINATOR_A }))?.plan.state).toBe("paused");
+      });
+
+      it("refuses an answer when no test is awaiting one, and a stale version, and replays a retry", async () => {
+        const store = await newStore();
+        const plan = await createActivePlan(store);
+        expect(
+          await store.resolveMobileCheck(
+            { planId: plan.plan.id, expectedVersion: plan.plan.version, outcome: "received" },
+            writeContext(COORDINATOR_A, `mc-na-${plan.plan.id}`),
+          ),
+        ).toEqual({ ok: false, reason: REPOSITORY_REFUSALS.mobileCheckNotAwaiting });
+
+        const input = { planId: plan.plan.id, expectedVersion: plan.plan.version };
+        const first = await store.recordMobileCheckSent(
+          input,
+          writeContext(COORDINATOR_A, `mc-replay-${plan.plan.id}`),
+        );
+        const trail = await store.listAuditEvents({ actor: AUDITOR_A });
+        const replay = await store.recordMobileCheckSent(
+          input,
+          writeContext(COORDINATOR_A, `mc-replay-${plan.plan.id}`),
+        );
+        expect(replay).toEqual(first);
+        expect(await store.listAuditEvents({ actor: AUDITOR_A })).toHaveLength(trail.length);
+
+        expect(
+          await store.recordMobileCheckSent(input, writeContext(COORDINATOR_A, `mc-stale-${plan.plan.id}`)),
+        ).toEqual({ ok: false, reason: REPOSITORY_REFUSALS.staleVersion });
+      });
+
+      it("refuses the check writes to a role without the capability, and to an ended plan", async () => {
+        const store = await newStore();
+        const plan = await createActivePlan(store);
+        expect(
+          await store.recordMobileCheckSent(
+            { planId: plan.plan.id, expectedVersion: plan.plan.version },
+            writeContext(AUDITOR_A, `mc-auditor-${plan.plan.id}`),
+          ),
+        ).toEqual({ ok: false, reason: REPOSITORY_REFUSALS.permissionDenied });
+        expect(
+          await store.recordMobileCheckSent(
+            { planId: plan.plan.id, expectedVersion: plan.plan.version },
+            writeContext(COORDINATOR_B, `mc-other-team-${plan.plan.id}`),
+          ),
+        ).toEqual({ ok: false, reason: REPOSITORY_REFUSALS.notFound });
+
+        const withdrawn = unwrap(
+          await store.withdrawPlan(
+            { planId: plan.plan.id, expectedVersion: plan.plan.version, origin: "patient" },
+            writeContext(COORDINATOR_A, `mc-ended-withdraw-${plan.plan.id}`),
+          ),
+        );
+        expect(
+          await store.recordMobileCheckSent(
+            { planId: plan.plan.id, expectedVersion: withdrawn.plan.version },
+            writeContext(COORDINATOR_A, `mc-ended-send-${plan.plan.id}`),
+          ),
+        ).toEqual({ ok: false, reason: "plan-terminal" });
+        expect(
+          await store.updatePatientContactDetail(
+            { planId: plan.plan.id, expectedVersion: withdrawn.plan.version, patientName: "Someone Else" },
+            writeContext(COORDINATOR_A, `mc-ended-edit-${plan.plan.id}`),
+          ),
+        ).toEqual({ ok: false, reason: "plan-terminal" });
+      });
+
+      it("pauses an active plan on a changed mobile, resets the check, and releases the new number only on the episode", async () => {
+        const store = await newStore();
+        const plan = await createActivePlan(store);
+        const sent = unwrap(
+          await store.recordMobileCheckSent(
+            { planId: plan.plan.id, expectedVersion: plan.plan.version },
+            writeContext(COORDINATOR_A, `cd-send-${plan.plan.id}`),
+          ),
+        );
+        const before = await store.listAuditEvents({ actor: AUDITOR_A });
+
+        const edited = await store.updatePatientContactDetail(
+          { planId: plan.plan.id, expectedVersion: sent.plan.version, patientMobileNumber: NEW_MOBILE },
+          writeContext(COORDINATOR_A, `cd-mobile-${plan.plan.id}`),
+        );
+        const outcome = unwrap(edited);
+
+        expect(outcome.mobileChanged).toBe(true);
+        expect(outcome.changed).toEqual(["mobile"]);
+        expect(outcome.exceptions).toEqual([{ type: "contactChanged" }]);
+        expect(outcome.record.plan).toEqual({ ...sent.plan, state: "paused", version: sent.plan.version + 1 });
+        expect(outcome.record.mobileCheck).toEqual({ state: "notChecked", sentAt: null, resolvedAt: null });
+        // The calendar is untouched: a changed number pauses, it does not reschedule or cancel.
+        expect(outcome.record.contacts.map((stored) => stored.contact.state)).toEqual(
+          plan.contacts.map((stored) => stored.contact.state),
+        );
+
+        // The write's own answer -- which a replay returns verbatim -- holds no number and no name.
+        expect(JSON.stringify(edited)).not.toMatch(MOBILE_DIGITS);
+        expect(JSON.stringify(edited)).not.toContain(PATIENT_DETAIL.patientName);
+
+        // Exactly one audit event, naming the field and never its value.
+        const added = (await store.listAuditEvents({ actor: AUDITOR_A })).slice(before.length);
+        expect(added.map((event) => [event.action, event.outcome])).toEqual([
+          ["updatePatientContactDetail:mobile", "allowed"],
+        ]);
+        expect(await auditTrailText(store)).not.toMatch(MOBILE_DIGITS);
+
+        const episode = await store.getEpisode(plan.plan.id, { actor: TEAM_LEAD_A });
+        expect(episode?.patientMobileNumber).toBe(NEW_MOBILE_STORED);
+        expect(await store.getPlan(plan.plan.id, { actor: COORDINATOR_A })).toEqual(outcome.record);
+      });
+
+      it("changes the name and preferred name without pausing, and names both fields in the audit action", async () => {
+        const store = await newStore();
+        const plan = await createActivePlan(store);
+
+        const outcome = unwrap(
+          await store.updatePatientContactDetail(
+            {
+              planId: plan.plan.id,
+              expectedVersion: plan.plan.version,
+              patientName: "Jordan Nguyen-Park",
+              preferredName: "Jo",
+            },
+            writeContext(COORDINATOR_A, `cd-name-${plan.plan.id}`),
+          ),
+        );
+
+        expect(outcome.mobileChanged).toBe(false);
+        expect(outcome.exceptions).toEqual([]);
+        expect(outcome.record.plan).toEqual({ ...plan.plan, version: plan.plan.version + 1 });
+        const episode = await store.getEpisode(plan.plan.id, { actor: TEAM_LEAD_A });
+        expect(episode?.patientName).toBe("Jordan Nguyen-Park");
+        expect(episode?.preferredName).toBe("Jo");
+        expect(episode?.patientMobileNumber).toBe(PATIENT_DETAIL.patientMobileNumber);
+        expect(
+          (await store.listPatientNames({ actor: COORDINATOR_A })).find((entry) => entry.planId === plan.plan.id),
+        ).toEqual({ planId: plan.plan.id, patientName: "Jordan Nguyen-Park" });
+
+        const trail = await auditTrailText(store);
+        expect(trail).toContain("updatePatientContactDetail:name,preferredName");
+        expect(trail).not.toContain("Nguyen-Park");
+        expect(trail).not.toContain('"Jo"');
+      });
+
+      it("refuses an edit that changes nothing, an invalid value, a stale version and a role without the capability", async () => {
+        const store = await newStore();
+        const plan = await createActivePlan(store);
+        const base = { planId: plan.plan.id, expectedVersion: plan.plan.version };
+
+        expect(
+          await store.updatePatientContactDetail(
+            { ...base, patientMobileNumber: "0491570156" },
+            writeContext(COORDINATOR_A, `cd-same-${plan.plan.id}`),
+          ),
+        ).toEqual({ ok: false, reason: REPOSITORY_REFUSALS.contactDetailUnchanged });
+        expect(
+          await store.updatePatientContactDetail(
+            { ...base, patientMobileNumber: "08 9222 1234" },
+            writeContext(COORDINATOR_A, `cd-landline-${plan.plan.id}`),
+          ),
+        ).toEqual({ ok: false, reason: REPOSITORY_REFUSALS.patientMobileInvalid });
+        expect(
+          await store.updatePatientContactDetail(
+            { ...base, patientName: "  " },
+            writeContext(COORDINATOR_A, `cd-blank-${plan.plan.id}`),
+          ),
+        ).toEqual({ ok: false, reason: REPOSITORY_REFUSALS.patientNameBlank });
+        expect(
+          await store.updatePatientContactDetail(
+            { ...base, expectedVersion: plan.plan.version - 1, patientName: "Someone Else" },
+            writeContext(COORDINATOR_A, `cd-stale-${plan.plan.id}`),
+          ),
+        ).toEqual({ ok: false, reason: REPOSITORY_REFUSALS.staleVersion });
+        expect(
+          await store.updatePatientContactDetail(
+            { ...base, patientName: "Someone Else" },
+            writeContext(AUDITOR_A, `cd-auditor-${plan.plan.id}`),
+          ),
+        ).toEqual({ ok: false, reason: REPOSITORY_REFUSALS.permissionDenied });
+
+        // Every refusal left the plan and its patient detail exactly as they were.
+        expect((await store.getPlan(plan.plan.id, { actor: COORDINATOR_A }))?.plan).toEqual(plan.plan);
+        expect((await store.getEpisode(plan.plan.id, { actor: TEAM_LEAD_A }))?.patientName).toBe(
+          PATIENT_DETAIL.patientName,
+        );
+        // And a refused edit's audit event names no field at all.
+        const trail = await store.listAuditEvents({ actor: AUDITOR_A });
+        expect(
+          trail.filter((event) => event.action.startsWith("updatePatientContactDetail")).map((event) => event.action),
+        ).toEqual(Array(5).fill("updatePatientContactDetail"));
+      });
+
+      it("counts this team's open plans holding the same number, and nothing else", async () => {
+        const store = await newStore();
+        const first = await createActivePlan(store);
+        const second = await createActivePlan(store);
+        const ended = await createActivePlan(store);
+        unwrap(
+          await store.withdrawPlan(
+            { planId: ended.plan.id, expectedVersion: ended.plan.version, origin: "patient" },
+            writeContext(COORDINATOR_A, `sm-withdraw-${ended.plan.id}`),
+          ),
+        );
+        await createActivePlan(store, { actor: COORDINATOR_B });
+
+        // Written three ways, all the same mobile; the ended plan and the other team's are not counted.
+        for (const written of ["+61 491 570 156", "0491570156", "61491570156"]) {
+          expect(await store.countPlansSharingMobile({ mobile: written }, { actor: COORDINATOR_A })).toBe(2);
+        }
+        expect(
+          await store.countPlansSharingMobile(
+            { mobile: "0491 570 156", excludePlanId: first.plan.id },
+            { actor: COORDINATOR_A },
+          ),
+        ).toBe(1);
+        expect(await store.countPlansSharingMobile({ mobile: NEW_MOBILE }, { actor: COORDINATOR_A })).toBe(0);
+        expect(await store.countPlansSharingMobile({ mobile: "not a number" }, { actor: COORDINATOR_A })).toBe(0);
+        // Team-scoped: the other team sees only its own plan.
+        expect(await store.countPlansSharingMobile({ mobile: "0491 570 156" }, { actor: COORDINATOR_B })).toBe(1);
+        // A role that cannot list patients' names learns nothing.
+        expect(await store.countPlansSharingMobile({ mobile: "0491 570 156" }, { actor: AUDITOR_A })).toBe(0);
+
+        // A changed number moves the count with it.
+        unwrap(
+          await store.updatePatientContactDetail(
+            { planId: second.plan.id, expectedVersion: second.plan.version, patientMobileNumber: NEW_MOBILE },
+            writeContext(COORDINATOR_A, `sm-edit-${second.plan.id}`),
+          ),
+        );
+        expect(await store.countPlansSharingMobile({ mobile: NEW_MOBILE_STORED }, { actor: COORDINATOR_A })).toBe(1);
+      });
+
+      it("still clears an edited number and name at retention, and keeps the check record", async () => {
+        const store = await newStore();
+        const plan = await createActivePlan(store);
+        const edited = unwrap(
+          await store.updatePatientContactDetail(
+            {
+              planId: plan.plan.id,
+              expectedVersion: plan.plan.version,
+              patientName: "Jordan Nguyen-Park",
+              patientMobileNumber: NEW_MOBILE,
+            },
+            writeContext(COORDINATOR_A, `rc-edit-${plan.plan.id}`),
+          ),
+        );
+        const sent = unwrap(
+          await store.recordMobileCheckSent(
+            { planId: plan.plan.id, expectedVersion: edited.record.plan.version },
+            writeContext(COORDINATOR_A, `rc-send-${plan.plan.id}`),
+          ),
+        );
+        unwrap(
+          await store.withdrawPlan(
+            { planId: plan.plan.id, expectedVersion: sent.plan.version, origin: "patient" },
+            writeContext(COORDINATOR_A, `rc-withdraw-${plan.plan.id}`),
+          ),
+        );
+
+        passRetentionPeriod();
+        unwrap(
+          await store.markRetentionCleared(
+            { planId: plan.plan.id },
+            writeContext(COORDINATOR_A, `rc-clear-${plan.plan.id}`),
+          ),
+        );
+
+        const episode = await store.getEpisode(plan.plan.id, { actor: TEAM_LEAD_A });
+        expect(episode?.patientMobileNumber).toBe("");
+        expect(episode?.patientName).toBe("");
+        expect((await store.getPlan(plan.plan.id, { actor: COORDINATOR_A }))?.mobileCheck.state).toBe(
+          "awaitingConfirmation",
+        );
+      });
+    });
+
     describe("every new write group appends its own audit event", () => {
       const auditedWrites: readonly {
         group: string;

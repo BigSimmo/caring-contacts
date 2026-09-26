@@ -34,6 +34,16 @@ import {
   sendableContacts,
 } from "./hospital-events";
 import { contactId } from "./ids";
+import {
+  MOBILE_NOT_CHECKED,
+  admitContactDetailEdit,
+  admitPlanStart,
+  contactDetailAuditAction,
+  planAfterDetailWrite,
+  recordMobileCheckSent as markMobileCheckSent,
+  resolveMobileCheck as answerMobileCheck,
+  type MobileCheck,
+} from "./mobile-check";
 import type { ActorId, ContactId, PathwayVersionId, PlanId, ReferralId, TeamId } from "./ids";
 import {
   DISPATCHED_CONTACT_STATES,
@@ -90,6 +100,10 @@ import {
   replayRecordPlanId,
   type AccessTrailQuery,
   type CaringContactRepository,
+  type ContactDetailInput,
+  type ContactDetailOutcome,
+  type ResolveMobileCheckInput,
+  type SharedMobileQuery,
   type ContactProviderStatusInput,
   type ContactStatusInput,
   type CreatePlanInput,
@@ -144,6 +158,12 @@ type WriteSpec<T> = {
   input: unknown;
   context: WriteContext;
   auditAction: string;
+  /**
+   * The audit action for an ACCEPTED write, when it depends on what the write found -- the contact
+   * detail edit names which fields changed. Must return an identifier, never a value. A refusal
+   * keeps `auditAction`.
+   */
+  auditActionFor?: (value: T) => string;
   objectId: string;
   /** What the audit event says was acted on. Defaults to the plan. */
   objectType?: string;
@@ -190,7 +210,12 @@ function toPlanRecord(stored: StoredPlan): PlanRecord {
     // audit event. An attestation whose whole value is that it says who and when is the last thing
     // in this record that may be handed out live.
     assuranceAttestations: stored.assuranceAttestations.map(cloneAttestation),
+    mobileCheck: cloneMobileCheck(stored.mobileCheck),
   };
+}
+
+function cloneMobileCheck(check: MobileCheck): MobileCheck {
+  return { state: check.state, sentAt: check.sentAt, resolvedAt: check.resolvedAt };
 }
 
 function cloneAttestation(attestation: PlanAssuranceAttestation): PlanAssuranceAttestation {
@@ -414,7 +439,7 @@ export function createInMemoryRepository(clock: Clock, options: RepositoryOption
           actorId: actor.id,
           actorRoles: actorRoleNames(actor),
           teamId: actor.teamId,
-          action: spec.auditAction,
+          action: staged.ok && spec.auditActionFor ? spec.auditActionFor(staged.value.value) : spec.auditAction,
           objectType: spec.objectType ?? "plan",
           objectId: spec.objectId,
           outcome,
@@ -573,6 +598,12 @@ export function createInMemoryRepository(clock: Clock, options: RepositoryOption
         if (!resolved.ok) return resolved;
         const moved = applyPlanTransition(resolved.value.plan, { type: transition });
         if (!moved.ok) return moved;
+        // Starting or restarting a plan is refused while a test text is unanswered or did not
+        // arrive -- the rule is ./mobile-check's, so the Postgres store answers identically.
+        if (transition !== "pause") {
+          const admitted = admitPlanStart(resolved.value.mobileCheck);
+          if (!admitted.ok) return admitted;
+        }
         const nextPlan = withPlan(resolved.value, moved.value);
         return {
           ok: true,
@@ -666,6 +697,7 @@ export function createInMemoryRepository(clock: Clock, options: RepositoryOption
             outcome: "inProgress",
             contacts,
             assuranceAttestations: attestations,
+            mobileCheck: cloneMobileCheck(MOBILE_NOT_CHECKED),
             patientDetail: {
               patientName: input.patientDetail.patientName,
               patientMobileNumber: input.patientDetail.patientMobileNumber,
@@ -797,6 +829,101 @@ export function createInMemoryRepository(clock: Clock, options: RepositoryOption
           };
           if (applied.value.incident) value.incident = applied.value.incident;
           return { ok: true, value: { value, commit: () => plans.set(nextPlan.plan.id, nextPlan) } };
+        },
+      });
+    },
+
+    async updatePatientContactDetail(input: ContactDetailInput, context: WriteContext) {
+      return runWrite<ContactDetailOutcome>({
+        method: "updatePatientContactDetail",
+        input,
+        context,
+        auditAction: "updatePatientContactDetail",
+        auditActionFor: (value) => contactDetailAuditAction(value.changed),
+        objectId: input.planId,
+        stage: () => {
+          const resolved = resolveForWrite(input, context.actor, ["recordHospitalStatusEvent"]);
+          if (!resolved.ok) return resolved;
+          const stored = resolved.value;
+          if (isTerminalPlan(stored.plan.state)) return { ok: false, reason: "plan-terminal" };
+
+          const edit = admitContactDetailEdit(
+            {
+              patientName: stored.patientDetail.patientName,
+              preferredName: stored.patientDetail.preferredName,
+              patientMobileNumber: stored.patientDetail.patientMobileNumber,
+            },
+            {
+              patientName: input.patientName,
+              preferredName: input.preferredName,
+              patientMobileNumber: input.patientMobileNumber,
+            },
+          );
+          if (!edit.ok) return edit;
+          const mobileChanged = edit.value.changed.includes("mobile");
+          const moved = planAfterDetailWrite(stored.plan, mobileChanged);
+          if (!moved.ok) return moved;
+
+          const nextPlan: StoredPlan = {
+            ...withPlan(stored, moved.value.plan),
+            patientDetail: { ...stored.patientDetail, ...edit.value.next },
+            // A new number has not been checked, whatever the old one's check said.
+            mobileCheck: mobileChanged ? cloneMobileCheck(MOBILE_NOT_CHECKED) : stored.mobileCheck,
+          };
+          const value: ContactDetailOutcome = {
+            record: toPlanRecord(nextPlan),
+            mobileChanged,
+            changed: [...edit.value.changed],
+            exceptions: [...moved.value.exceptions],
+          };
+          return { ok: true, value: { value, commit: () => plans.set(nextPlan.plan.id, nextPlan) } };
+        },
+      });
+    },
+
+    async recordMobileCheckSent(input: PlanLifecycleInput, context: WriteContext) {
+      return runWrite<PlanRecord>({
+        method: "recordMobileCheckSent",
+        input,
+        context,
+        auditAction: "recordMobileCheckSent",
+        objectId: input.planId,
+        stage: () => {
+          const resolved = resolveForWrite(input, context.actor, ["recordHospitalStatusEvent"]);
+          if (!resolved.ok) return resolved;
+          const moved = planAfterDetailWrite(resolved.value.plan, false);
+          if (!moved.ok) return moved;
+          const nextPlan: StoredPlan = {
+            ...withPlan(resolved.value, moved.value.plan),
+            mobileCheck: markMobileCheckSent(resolved.value.mobileCheck, clock.now()),
+          };
+          return {
+            ok: true,
+            value: { value: toPlanRecord(nextPlan), commit: () => plans.set(nextPlan.plan.id, nextPlan) },
+          };
+        },
+      });
+    },
+
+    async resolveMobileCheck(input: ResolveMobileCheckInput, context: WriteContext) {
+      return runWrite<PlanRecord>({
+        method: "resolveMobileCheck",
+        input,
+        context,
+        auditAction: `resolveMobileCheck:${input.outcome}`,
+        objectId: input.planId,
+        stage: () => {
+          const resolved = resolveForWrite(input, context.actor, ["recordHospitalStatusEvent"]);
+          if (!resolved.ok) return resolved;
+          const moved = planAfterDetailWrite(resolved.value.plan, false);
+          if (!moved.ok) return moved;
+          const answered = answerMobileCheck(resolved.value.mobileCheck, input.outcome, clock.now());
+          if (!answered.ok) return answered;
+          const nextPlan: StoredPlan = { ...withPlan(resolved.value, moved.value.plan), mobileCheck: answered.value };
+          return {
+            ok: true,
+            value: { value: toPlanRecord(nextPlan), commit: () => plans.set(nextPlan.plan.id, nextPlan) },
+          };
         },
       });
     },
@@ -1577,6 +1704,23 @@ export function createInMemoryRepository(clock: Clock, options: RepositoryOption
       return [...plans.values()]
         .filter((stored) => mayReadAll(context.actor, PATIENT_NAME_READ_ACTIONS, stored.plan.teamId))
         .map((stored) => ({ planId: stored.plan.id, patientName: stored.patientDetail.patientName }));
+    },
+
+    /**
+     * The shared-number count. Scoped exactly as `listPatientNames` is -- the actor's own team, and
+     * only for an actor who could list names -- and it releases a number, never a plan or a name.
+     */
+    async countPlansSharingMobile(input: SharedMobileQuery, context: ReadContext) {
+      const wanted = toAustralianMobileE164(input.mobile);
+      if (wanted === null) return 0;
+      return [...plans.values()].filter(
+        (stored) =>
+          stored.plan.teamId === context.actor.teamId &&
+          mayReadAll(context.actor, PATIENT_NAME_READ_ACTIONS, stored.plan.teamId) &&
+          !isTerminalPlan(stored.plan.state) &&
+          stored.plan.id !== input.excludePlanId &&
+          toAustralianMobileE164(stored.patientDetail.patientMobileNumber) === wanted,
+      ).length;
     },
 
     async listContacts(planId: PlanId, context: ReadContext) {

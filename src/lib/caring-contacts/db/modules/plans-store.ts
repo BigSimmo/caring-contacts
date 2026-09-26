@@ -22,6 +22,7 @@ import {
 } from "../../ids";
 import {
   DISPATCHED_CONTACT_STATES,
+  TERMINAL_PLAN_STATES,
   applyDraftCancellation,
   applyPlanTransition,
   type ContactState,
@@ -40,6 +41,17 @@ import {
   type PathwayVersion,
   type PathwayVersionSnapshot,
 } from "../../pathway-versions";
+import {
+  admitContactDetailEdit,
+  admitPlanStart,
+  contactDetailAuditAction,
+  isMobileCheckState,
+  MOBILE_NOT_CHECKED,
+  planAfterDetailWrite,
+  recordMobileCheckSent as markMobileCheckSent,
+  resolveMobileCheck as answerMobileCheck,
+  type MobileCheck,
+} from "../../mobile-check";
 import { canPerformCaringContactAction, type CaringContactAction, type CaringContactActor } from "../../permissions";
 import { applyReferralTransition } from "../../referrals";
 import { admitRetentionClearance } from "../../retention";
@@ -55,6 +67,8 @@ import {
   contactIdentifierFor,
   isTerminalPlan,
   outcomeFor,
+  type ContactDetailInput,
+  type ContactDetailOutcome,
   type CreatePlanInput,
   type CreateReferralInput,
   type HospitalStatusInput,
@@ -67,13 +81,16 @@ import {
   type PlanRecord,
   type ReadContext,
   type ReferralTransitionInput,
+  type ResolveMobileCheckInput,
   type SavePathwayVersionInput,
+  type SharedMobileQuery,
   type StoredContact,
   type StoredPatientDetail,
   type WithdrawPlanInput,
   type WriteContext,
 } from "../../repository";
 import { buildApprovedSchedule } from "../../schedule";
+import { toAustralianMobileE164 } from "../../transport/phone";
 import {
   encodeStoredValue,
   INSERT_SAVEPOINT,
@@ -92,10 +109,11 @@ import {
 
 export const PLAN_COLUMNS = `id, team_id, patient_id, referral_id, pathway_version_id, state, version, outcome,
   discharge_at, created_at, completed_at, sending_preference, patient_name, patient_mobile_number,
-  patient_identifiers`;
+  patient_identifiers, mobile_check_state, mobile_check_sent_at, mobile_check_resolved_at`;
 
 export const PLAN_LIST_COLUMNS = `id, team_id, patient_id, referral_id, pathway_version_id, state, version,
-  outcome, discharge_at, created_at, completed_at, sending_preference`;
+  outcome, discharge_at, created_at, completed_at, sending_preference, mobile_check_state, mobile_check_sent_at,
+  mobile_check_resolved_at`;
 
 export const PLAN_ASSURANCE_COLUMNS = "plan_id, assurance, actor_id, attested_at";
 
@@ -121,6 +139,43 @@ export function toAssuranceAttestation(row: SqlRow): PlanAssuranceAttestation {
   return { assurance, actorId: toActorId(textOf(row.actor_id)), attestedAt: instantOf(row.attested_at) };
 }
 
+/** The number check's three columns (migration 0030). An unknown state fails loudly, like an unknown assurance. */
+export function toMobileCheck(row: SqlRow): MobileCheck {
+  const state = textOf(row.mobile_check_state);
+  if (!isMobileCheckState(state)) {
+    throw new Error(`caring-contacts: mobile check state "${state}" is not one this domain knows`);
+  }
+  return {
+    state,
+    sentAt: isAbsent(row.mobile_check_sent_at) ? null : instantOf(row.mobile_check_sent_at).toISOString(),
+    resolvedAt: isAbsent(row.mobile_check_resolved_at) ? null : instantOf(row.mobile_check_resolved_at).toISOString(),
+  };
+}
+
+/**
+ * Writes a plan's number check together with its next version, under the same optimistic guard
+ * `writePlan` uses. The check columns hold no patient content.
+ */
+export async function writeMobileCheck(
+  connection: SqlConnection,
+  plan: Plan,
+  check: MobileCheck,
+  completedAt: Date | null,
+): Promise<void> {
+  await writePlan(connection, plan, completedAt);
+  await connection.query(
+    `update caring_contacts.plans
+        set mobile_check_state = $2, mobile_check_sent_at = $3, mobile_check_resolved_at = $4
+      where id = $1`,
+    [
+      plan.id,
+      check.state,
+      check.sentAt === null ? null : new Date(check.sentAt),
+      check.resolvedAt === null ? null : new Date(check.resolvedAt),
+    ],
+  );
+}
+
 export function toPlanRecord(
   planRow: SqlRow,
   contactRows: readonly SqlRow[],
@@ -139,6 +194,7 @@ export function toPlanRecord(
     outcome: textOf(planRow.outcome) as PlanOutcome,
     contacts: contactRows.map(toStoredContactFn),
     assuranceAttestations: assuranceRows.map(toAssuranceAttestation),
+    mobileCheck: toMobileCheck(planRow),
   };
 }
 
@@ -329,6 +385,11 @@ export class PlansStore {
         if (!resolved.ok) return resolved;
         const moved = applyPlanTransition(toPlan(resolved.value), { type: transition });
         if (!moved.ok) return moved;
+        // The same rule, from the same module, as the in-memory store: see `admitPlanStart`.
+        if (transition !== "pause") {
+          const admitted = admitPlanStart(toMobileCheck(resolved.value));
+          if (!admitted.ok) return admitted;
+        }
 
         const completedAt = isTerminalPlan(moved.value.state) ? this.ctx.clock.now() : null;
         await writePlan(connection, moved.value, completedAt);
@@ -572,6 +633,124 @@ export class PlansStore {
         };
         if (applied.value.incident) value.incident = applied.value.incident;
         return { ok: true, value };
+      },
+    });
+  }
+
+  async updatePatientContactDetail(
+    input: ContactDetailInput,
+    context: WriteContext,
+  ): Promise<TransitionResult<ContactDetailOutcome>> {
+    return this.ctx.runWrite<ContactDetailOutcome>({
+      method: "updatePatientContactDetail",
+      input,
+      context,
+      auditAction: "updatePatientContactDetail",
+      auditActionFor: (value) => contactDetailAuditAction(value.changed),
+      objectId: input.planId,
+      stage: async (connection) => {
+        const resolved = await this.resolveForWrite(connection, input, context.actor, ["recordHospitalStatusEvent"]);
+        if (!resolved.ok) return resolved;
+        const plan = toPlan(resolved.value);
+        if (isTerminalPlan(plan.state)) return { ok: false, reason: "plan-terminal" };
+
+        // The detail columns are read here, inside the write, and never leave it: the outcome
+        // carries the record and the names of the changed fields, not their values.
+        const detail = await connection.query(
+          "select patient_name, preferred_name, patient_mobile_number from caring_contacts.plans where id = $1",
+          [input.planId],
+        );
+        const row = detail.rows[0];
+        const edit = admitContactDetailEdit(
+          {
+            patientName: textOf(row.patient_name),
+            preferredName: isAbsent(row.preferred_name) ? null : textOf(row.preferred_name),
+            patientMobileNumber: textOf(row.patient_mobile_number),
+          },
+          {
+            patientName: input.patientName,
+            preferredName: input.preferredName,
+            patientMobileNumber: input.patientMobileNumber,
+          },
+        );
+        if (!edit.ok) return edit;
+        const mobileChanged = edit.value.changed.includes("mobile");
+        const moved = planAfterDetailWrite(plan, mobileChanged);
+        if (!moved.ok) return moved;
+
+        const check = mobileChanged ? MOBILE_NOT_CHECKED : toMobileCheck(resolved.value);
+        await writeMobileCheck(connection, moved.value.plan, check, null);
+        await connection.query(
+          `update caring_contacts.plans
+              set patient_name = $2, preferred_name = $3, patient_mobile_number = $4
+            where id = $1`,
+          [
+            input.planId,
+            edit.value.next.patientName,
+            edit.value.next.preferredName,
+            edit.value.next.patientMobileNumber,
+          ],
+        );
+
+        const stored = await this.readPlanRecord(connection, input.planId);
+        if (!stored) throw new Error(`caring-contacts: plan ${input.planId} vanished inside its own transaction`);
+        return {
+          ok: true,
+          value: {
+            record: this.toPlanRecord(stored.planRow, stored.contactRows, stored.assuranceRows),
+            mobileChanged,
+            changed: [...edit.value.changed],
+            exceptions: [...moved.value.exceptions],
+          },
+        };
+      },
+    });
+  }
+
+  async recordMobileCheckSent(input: PlanLifecycleInput, context: WriteContext): Promise<TransitionResult<PlanRecord>> {
+    return this.ctx.runWrite<PlanRecord>({
+      method: "recordMobileCheckSent",
+      input,
+      context,
+      auditAction: "recordMobileCheckSent",
+      objectId: input.planId,
+      stage: async (connection) => {
+        const resolved = await this.resolveForWrite(connection, input, context.actor, ["recordHospitalStatusEvent"]);
+        if (!resolved.ok) return resolved;
+        const moved = planAfterDetailWrite(toPlan(resolved.value), false);
+        if (!moved.ok) return moved;
+        const check = markMobileCheckSent(toMobileCheck(resolved.value), this.ctx.clock.now());
+        await writeMobileCheck(connection, moved.value.plan, check, null);
+
+        const stored = await this.readPlanRecord(connection, input.planId);
+        if (!stored) throw new Error(`caring-contacts: plan ${input.planId} vanished inside its own transaction`);
+        return { ok: true, value: this.toPlanRecord(stored.planRow, stored.contactRows, stored.assuranceRows) };
+      },
+    });
+  }
+
+  async resolveMobileCheck(
+    input: ResolveMobileCheckInput,
+    context: WriteContext,
+  ): Promise<TransitionResult<PlanRecord>> {
+    return this.ctx.runWrite<PlanRecord>({
+      method: "resolveMobileCheck",
+      input,
+      context,
+      auditAction: `resolveMobileCheck:${input.outcome}`,
+      objectId: input.planId,
+      stage: async (connection) => {
+        const resolved = await this.resolveForWrite(connection, input, context.actor, ["recordHospitalStatusEvent"]);
+        if (!resolved.ok) return resolved;
+        const moved = planAfterDetailWrite(toPlan(resolved.value), false);
+        if (!moved.ok) return moved;
+        const answered = answerMobileCheck(toMobileCheck(resolved.value), input.outcome, this.ctx.clock.now());
+        if (!answered.ok) return answered;
+        await writeMobileCheck(connection, moved.value.plan, answered.value, null);
+
+        const stored = await this.readPlanRecord(connection, input.planId);
+        if (!stored) throw new Error(`caring-contacts: plan ${input.planId} vanished inside its own transaction`);
+        return { ok: true, value: this.toPlanRecord(stored.planRow, stored.contactRows, stored.assuranceRows) };
       },
     });
   }
@@ -981,6 +1160,29 @@ export class PlansStore {
         planId: textOf(row.id) as PlanId,
         patientName: textOf(row.patient_name),
       }));
+    });
+  }
+
+  /**
+   * The shared-number count, scoped as `listPatientNames` is. The team's open plans' numbers are
+   * compared here, after normalising, so the comparison needs no SQL of its own for the several
+   * forms a number is stored in; none of them leaves this function.
+   */
+  async countPlansSharingMobile(input: SharedMobileQuery, context: ReadContext): Promise<number> {
+    if (!mayReadAllOwnTeam(context, PATIENT_NAME_READ_ACTIONS)) return 0;
+    const wanted = toAustralianMobileE164(input.mobile);
+    if (wanted === null) return 0;
+    return this.ctx.runRead(context, async (connection) => {
+      const result = await connection.query(
+        `select id, patient_mobile_number from caring_contacts.plans
+          where team_id = $1 and state <> all($2::text[])`,
+        [context.actor.teamId, [...TERMINAL_PLAN_STATES]],
+      );
+      return result.rows.filter(
+        (row) =>
+          textOf(row.id) !== input.excludePlanId &&
+          toAustralianMobileE164(textOf(row.patient_mobile_number)) === wanted,
+      ).length;
     });
   }
 

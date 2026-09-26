@@ -51,6 +51,7 @@ import type { AuditEvent } from "./audit";
 import type { Clock } from "./clock";
 import type { ContactDateChangeRequest, ContactMoveRequest } from "./contact-rescheduling";
 import type { HospitalStatusEvent, PlanException, PlanIncident, WithdrawalOrigin } from "./hospital-events";
+import { MOBILE_CHECK_REFUSALS, type ContactDetailField, type MobileCheck } from "./mobile-check";
 import type {
   ActorId,
   ContactId,
@@ -266,6 +267,19 @@ export const REPOSITORY_REFUSALS = Object.freeze({
    * becoming free again.
    */
   idempotentResultClearedByRetention: "idempotent-result-cleared-by-retention",
+  /**
+   * The number check (./mobile-check). `activatePlan` and `resumePlan` refuse while a test text is
+   * unanswered or the patient said it did not arrive; the rest name an edit or an answer that
+   * cannot be recorded. The strings are ./mobile-check's, so the domain and this contract cannot
+   * drift apart.
+   */
+  mobileCheckUnconfirmed: MOBILE_CHECK_REFUSALS.unconfirmed,
+  mobileCheckNotAwaiting: MOBILE_CHECK_REFUSALS.notAwaiting,
+  mobileCheckSendFailed: MOBILE_CHECK_REFUSALS.sendFailed,
+  contactDetailUnchanged: MOBILE_CHECK_REFUSALS.contactDetailUnchanged,
+  patientMobileInvalid: MOBILE_CHECK_REFUSALS.patientMobileInvalid,
+  patientNameBlank: MOBILE_CHECK_REFUSALS.patientNameBlank,
+  patientPreferredNameInvalid: MOBILE_CHECK_REFUSALS.patientPreferredNameInvalid,
 } as const);
 
 export type RepositoryRefusal = (typeof REPOSITORY_REFUSALS)[keyof typeof REPOSITORY_REFUSALS];
@@ -677,6 +691,13 @@ export type PlanRecord = {
    * that returns the plan and the evidence about it together rather than by two different routes.
    */
   assuranceAttestations: readonly PlanAssuranceAttestation[];
+  /**
+   * Whether the stored mobile number has been checked with a one-off test text (./mobile-check).
+   * A closed state and two ISO instants -- no patient content, so a list read may carry it and a
+   * retention clearance leaves it as it is. A plan created before the check existed holds
+   * `notChecked`, and a change of mobile number puts it back there.
+   */
+  mobileCheck: MobileCheck;
 };
 
 /**
@@ -777,6 +798,34 @@ export type WithdrawPlanInput = PlanLifecycleInput & {
   reason?: string;
 };
 export type HospitalStatusInput = PlanLifecycleInput & { event: HospitalStatusEvent };
+
+/**
+ * An edit to the name, preferred name or mobile number a plan sends to. Only the named fields are
+ * changed; the rules are `admitContactDetailEdit` in ./mobile-check.
+ */
+export type ContactDetailInput = PlanLifecycleInput & {
+  patientName?: string;
+  preferredName?: string | null;
+  patientMobileNumber?: string;
+};
+
+/**
+ * What an edit returns. NO patient detail -- see "WHAT THE REPLAY RECORD MAY HOLD" above: the edited
+ * values stay in storage and are released only by `getEpisode`. `changed` names the fields, never
+ * their values, and is what the audit action records.
+ */
+export type ContactDetailOutcome = {
+  record: PlanRecord;
+  mobileChanged: boolean;
+  changed: readonly ContactDetailField[];
+  /** `contactChanged` when a changed mobile paused (or kept paused) a started plan. */
+  exceptions: readonly PlanException[];
+};
+
+export type ResolveMobileCheckInput = PlanLifecycleInput & { outcome: "received" | "notReceived" };
+
+/** The shared-number read. `mobile` is compared after normalising; it never leaves the store. */
+export type SharedMobileQuery = { mobile: string; excludePlanId?: PlanId };
 
 export type HospitalStatusOutcome = {
   record: PlanRecord;
@@ -902,6 +951,26 @@ export interface CaringContactRepository {
     input: HospitalStatusInput,
     context: WriteContext,
   ): Promise<TransitionResult<HospitalStatusOutcome>>;
+
+  /**
+   * Edits the name, preferred name or mobile number of a plan that has not ended. Gated on
+   * `recordHospitalStatusEvent`. A changed mobile on a started plan composes the existing
+   * `mobileChanged` hospital event (pause, `contactChanged` exception) rather than restating it, and
+   * puts the number check back to `notChecked`. A name-only edit pauses nothing. The audit action
+   * names WHICH fields changed (`updatePatientContactDetail:mobile,name`), never their values.
+   */
+  updatePatientContactDetail(
+    input: ContactDetailInput,
+    context: WriteContext,
+  ): Promise<TransitionResult<ContactDetailOutcome>>;
+  /**
+   * Records that the one-off test text went out. The caller sends it FIRST, through the transport,
+   * and records only on success -- a failed send records nothing. Gated on
+   * `recordHospitalStatusEvent`; refused for an ended plan.
+   */
+  recordMobileCheckSent(input: PlanLifecycleInput, context: WriteContext): Promise<TransitionResult<PlanRecord>>;
+  /** The staff member's answer to "did it arrive?". Refused `mobile-check-not-awaiting` when none is waiting. */
+  resolveMobileCheck(input: ResolveMobileCheckInput, context: WriteContext): Promise<TransitionResult<PlanRecord>>;
 
   /**
    * The dispatch path. Four separate writes rather than one, because each is a distinct fact with
@@ -1049,6 +1118,14 @@ export interface CaringContactRepository {
    * exist. Team scoping is `listPlans`'s exactly, so a plan invisible there has no name here.
    */
   listPatientNames(context: ReadContext): Promise<PatientNameProjection[]>;
+  /**
+   * How many of this team's plans that have NOT ended hold the same mobile number (compared after
+   * normalising to E.164), not counting `excludePlanId`. A count and nothing else: no id, no name.
+   * Zero for a value that is not an Australian mobile, and zero for an actor who could not list
+   * patients' names (`PATIENT_NAME_READ_ACTIONS`) -- the same "empty, never a refusal" rule every
+   * list read follows.
+   */
+  countPlansSharingMobile(input: SharedMobileQuery, context: ReadContext): Promise<number>;
   listContacts(planId: PlanId, context: ReadContext): Promise<StoredContact[]>;
   /**
    * The contacts that may actually go out.

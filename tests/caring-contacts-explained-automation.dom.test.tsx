@@ -383,6 +383,18 @@ const ALLOWED_CLIENT_COMPONENTS = [
   // the Server Component beside it renders; the companion test below proves its module graph
   // never names the service-state module or type; and it is here deliberately.
   "inbound-reply-follow-up-button.tsx",
+  // The patient/plan screen's "Record a change" (readmission, death, death correction, mobile
+  // number, name) and "Check the number" (a one-off test text and the patient's answer). Client
+  // boundaries because each performs a write on a click, and the mobile change asks the
+  // shared-number check while a coordinator types. Added on the same three conditions as every entry
+  // above: their props are one plain-data context -- a plan id, a plan state, a version number, the
+  // number check's state and two instants, and two booleans -- plus, for the change surface, the
+  // patient's name, preferred name and number from the episode the page already renders. No state
+  // object and nothing derived from the service record; the companion test below proves both module
+  // graphs (including their unmarked helpers in the same folder) never name the service-state module
+  // or type.
+  "patient-updates/record-a-change.tsx",
+  "patient-updates/mobile-check-panel.tsx",
 ];
 
 /**

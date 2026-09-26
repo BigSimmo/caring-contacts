@@ -84,6 +84,25 @@ establish that the rule is clinically right, and it does not establish that anyt
 | **H-C05** | A readmission or a changed mobile silently resumes or rebases the calendar | An event arrives and the system "helpfully" recomputes                             | Contacts arrive on the wrong days, or resume without a human decision                          | `hospital-events.ts:127` — pauses only, raises a contact-changed exception on every mobile change, and rebases no date                                                       | Requires a human to unpause; no reminder mechanism exists                                                                           | H-00 (unfilled) | Controlled — unreviewed |
 | **H-C06** | An urgent-safety pathway retirement leaves running plans sending           | A version is retired for a safety reason while plans are live against its snapshot | Contacts keep going out under wording or cadence that was withdrawn for safety                 | `src/lib/caring-contacts/pathway-versions.ts:247` — only an `urgentSafety` retirement pauses future contacts; proved by `tests/caring-contacts-pathway-versions.test.ts`     | Whether a given retirement _is_ urgent is a human judgement with no criteria written down                                           | H-00 (unfilled) | Partial                 |
 
+**Staff can now reach these controls from the plan screen (2026-09-26).** The controls for H-C01,
+H-C03 and H-C05 — recording a death (with the day it happened, if known), correcting a recorded
+death, recording a readmission, and changing the mobile number — no longer depend on an upstream
+feed alone. The plan screen calls `POST /api/caring-contacts/plans/[planId]` (`recordEvent`,
+`updateContactDetail`), which goes through the same `hospital-events.ts` functions; nothing about
+what each event does has changed. A changed number pauses a started plan through the existing
+`mobileChanged` event, and nothing resumes it automatically. Proved by
+`tests/caring-contacts-patient-updates-routes.test.ts` and the shared repository contract.
+
+**Guards against a mistyped mobile number.** A number typed wrongly sends a year of caring contacts
+to a stranger while the patient hears nothing. Three guards now meet it: every place a number is
+typed asks for it twice and the two must match; the screen warns when another of the team's open
+plans already holds the same number (`patients/shared-mobile`, which returns a count only); and
+staff may send a fixed test text while the patient is with them
+(`src/lib/caring-contacts/mobile-check.ts`). While a test text is unanswered, or the patient said it
+did not arrive, the plan cannot start or restart (`mobile-check-unconfirmed`). Residual risk: the
+test text is optional, so a never-checked number can still start a plan, and the shared-number
+check looks only within the team.
+
 ### B2 — What a message says
 
 The five rows below sit behind one function, `validateGovernedMessage`

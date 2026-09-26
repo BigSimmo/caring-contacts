@@ -23,6 +23,9 @@ import { PatientReplies } from "./inbound-replies";
 import { ExitOnlyOverlayTrigger } from "./overlays/exit-only-overlay-trigger";
 import type { PlanActionsContext } from "./plan-action-rules";
 import { PlanActions } from "./plan-actions";
+import { MobileCheckPanel } from "./patient-updates/mobile-check-panel";
+import { offeredUpdates, type PatientUpdatesContext } from "./patient-updates/patient-update-rules";
+import { RecordAChange } from "./patient-updates/record-a-change";
 import { workspacePanelPadded } from "./surfaces";
 
 /**
@@ -209,6 +212,11 @@ export type PatientOverviewView =
       inboundReplies?: readonly InboundReplyWithText[] | null;
       /** Whether the acting role holds `followUpInboundReply`, decided by the page. */
       mayFollowUpReplies?: boolean;
+      /**
+       * "Record a change" and "Check the number", resolved by the page from the actor and the plan.
+       * Optional: absent renders neither, which is also what a role without the capability sees.
+       */
+      updates?: PatientUpdatesContext;
     };
 
 export type PatientOverviewProps = {
@@ -258,7 +266,44 @@ export function PatientOverview({ patientId, view }: PatientOverviewProps) {
       actions={view.actions}
       inboundReplies={view.inboundReplies ?? null}
       mayFollowUpReplies={view.mayFollowUpReplies ?? false}
+      updates={view.updates}
     />
+  );
+}
+
+/**
+ * The card around each surface, rendered only when the surface has something to offer, so an
+ * ended plan or a read-only role does not see an empty card. The decision is the rules module's.
+ */
+function RecordAChangeCard({
+  updates,
+  detail,
+}: {
+  updates: PatientUpdatesContext;
+  detail: Parameters<typeof RecordAChange>[0]["detail"];
+}) {
+  const offered = offeredUpdates(updates, updates.planState);
+  if (
+    !offered.readmission &&
+    !offered.death &&
+    !offered.deathCorrection &&
+    !(offered.contactDetail && detail !== null)
+  ) {
+    return null;
+  }
+  return (
+    <section className={cardClass}>
+      <RecordAChange context={updates} detail={detail} />
+    </section>
+  );
+}
+
+function MobileCheckCard({ updates }: { updates: PatientUpdatesContext }) {
+  if (!offeredUpdates(updates, updates.planState).mobileCheck) return null;
+  return (
+    <section className={cardClass}>
+      <MobileCheckPanel context={updates} />
+    </section>
   );
 }
 
@@ -364,6 +409,7 @@ function EpisodeOverview({
   actions,
   inboundReplies,
   mayFollowUpReplies,
+  updates,
 }: {
   patientId: string;
   record: PlanRecord;
@@ -372,6 +418,7 @@ function EpisodeOverview({
   actions: PlanActionsContext;
   inboundReplies: readonly InboundReplyWithText[] | null;
   mayFollowUpReplies: boolean;
+  updates?: PatientUpdatesContext;
 }) {
   const name = episode !== null && episode.patientName !== "" ? episode.patientName : null;
   const entries = [...record.contacts].sort((left, right) => left.planned.sequence - right.planned.sequence);
@@ -582,6 +629,30 @@ function EpisodeOverview({
       <section className={cardClass}>
         <PlanActions context={actions} />
       </section>
+
+      {/*
+        What has happened to the patient since discharge, and the test text to their number. Both
+        write, so both live in client components beside the plan actions; each renders nothing when
+        the role or the plan's state leaves it nothing the service would accept. The contact detail
+        edits need the episode read, because nobody should change a number they cannot see.
+      */}
+      {updates === undefined ? null : (
+        <>
+          <RecordAChangeCard
+            updates={updates}
+            detail={
+              episode === null
+                ? null
+                : {
+                    patientName: episode.patientName,
+                    preferredName: episode.preferredName,
+                    patientMobileNumber: episode.patientMobileNumber,
+                  }
+            }
+          />
+          <MobileCheckCard updates={updates} />
+        </>
+      )}
 
       <section aria-labelledby="caring-contacts-schedule-heading" className={cardClass}>
         <div className="min-w-0">

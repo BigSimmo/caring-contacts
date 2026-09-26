@@ -3,6 +3,11 @@ import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 
 import type { PlanActionsContext } from "@/components/caring-contacts/workspace/plan-action-rules";
+import {
+  MOBILE_CHECK_NOT_CHECKED,
+  mobileCheckFrom,
+  type PatientUpdatesContext,
+} from "@/components/caring-contacts/workspace/patient-updates/patient-update-rules";
 import { PatientOverview, type PatientOverviewView } from "@/components/caring-contacts/workspace/patient-overview";
 import { CARING_CONTACTS_PLAN_QUERY_PARAM } from "@/lib/caring-contacts-routes";
 import { auditedRead } from "@/lib/caring-contacts-server/handler";
@@ -337,6 +342,7 @@ export default async function CaringContactsPatientOverviewPage({
       inboundReplies,
       mayFollowUpReplies: canPerformCaringContactAction(actor, "followUpInboundReply", { teamId: actor.teamId })
         .allowed,
+      updates: patientUpdatesContext(chosen),
     };
   }
 
@@ -356,6 +362,31 @@ export default async function CaringContactsPatientOverviewPage({
    *   * WHERE A PLAN MAY MOVE TO: every demo role granted the action of taking a plan on, minus
    *     whoever is already carrying it. Asked of the domain rather than restated from its grants.
    */
+  /**
+   * Everything "Record a change" and "Check the number" are handed, decided HERE from the actor.
+   *
+   * Every one of these writes is gated on `recordHospitalStatusEvent`; a death and its correction
+   * also accept `triggerServiceSafetyStop`, because recording a death must never be blocked by a
+   * permission check (see `permissions.ts`). As with the plan actions, this is what the screen
+   * SHOWS; the service checks the same capability at the write.
+   *
+   * The number check is read from the plan record the list read already released -- it carries no
+   * patient text. A record that carries none reads as not checked, which is what the migration
+   * defaults every existing row to.
+   */
+  function patientUpdatesContext(plan: PlanRecord): PatientUpdatesContext {
+    const may = (action: Parameters<typeof canPerformCaringContactAction>[1]) =>
+      canPerformCaringContactAction(actor, action, { teamId: actor.teamId }).allowed;
+    const hospitalEvents = may("recordHospitalStatusEvent");
+    return {
+      planId: plan.plan.id,
+      planState: plan.plan.state,
+      planVersion: plan.plan.version,
+      mobileCheck: mobileCheckFrom(plan) ?? MOBILE_CHECK_NOT_CHECKED,
+      granted: { hospitalEvents, death: hospitalEvents || may("triggerServiceSafetyStop") },
+    };
+  }
+
   function planActionsContext(plan: PlanRecord, assignment: PlanAssignment): PlanActionsContext {
     const grants = (role: CaringContactRole, action: Parameters<typeof canPerformCaringContactAction>[1]) =>
       canPerformCaringContactAction(demoActorForRole(role), action, { teamId: actor.teamId }).allowed;
@@ -366,6 +397,7 @@ export default async function CaringContactsPatientOverviewPage({
       planId: plan.plan.id,
       planState: plan.plan.state,
       planVersion: plan.plan.version,
+      mobileCheckState: (mobileCheckFrom(plan) ?? MOBILE_CHECK_NOT_CHECKED).state,
       actingAccount: actingRole,
       actingAccountWording: CARING_CONTACT_ROLE_WORDING[actingRole],
       actingActorId: actor.id,
