@@ -931,6 +931,12 @@ export type AccessTrailQuery = {
   objectType?: AccessedObjectType;
   limit: number;
   offset: number;
+  /**
+   * Read the window newest first. Absent or false keeps the long-standing oldest-first order. A
+   * reviewer reading a capped page wants the most recent access, and reversing an oldest-first page
+   * afterwards only reorders the EARLIEST `limit` entries, dropping the newest ones entirely.
+   */
+  newestFirst?: boolean;
 };
 
 export interface CaringContactRepository {
