@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { PlanState } from "@/lib/caring-contacts/model";
 
+import { usePlanSync } from "../plan-sync";
 import {
   planActionRefusalNameFrom,
   planActionRefusalWording,
@@ -40,6 +41,7 @@ export type PlanUpdateSent = { ok: true; payload: unknown } | { ok: false };
  */
 export function usePlanUpdate(initial: HeldPlan) {
   const router = useRouter();
+  const sync = usePlanSync();
   const [plan, setPlan] = useState<HeldPlan | null>(initial);
   const [pending, setPending] = useState<PatientUpdateId | null>(null);
   const [outcome, setOutcome] = useState<PatientUpdateOutcome | null>(null);
@@ -55,12 +57,21 @@ export function usePlanUpdate(initial: HeldPlan) {
     setFromServer(initial);
     setPlan((current) => (current !== null && current.version > initial.version ? current : initial));
   }
+  // Another panel on this page wrote to the plan and was answered with a NEWER version: adopt it,
+  // keeping this panel's own number check unless the answer carried one. See `plan-sync.ts`.
+  if (sync.latest !== null && (plan === null || sync.latest.version > plan.version)) {
+    setPlan({
+      state: sync.latest.state,
+      version: sync.latest.version,
+      mobileCheck: sync.latest.mobileCheck ?? plan?.mobileCheck ?? fromServer.mobileCheck,
+    });
+  }
 
   const keys = useRef<Partial<Record<PatientUpdateId, { fingerprint: string; key: string }>>>({});
-  const live = useRef({ plan, pending });
+  const live = useRef({ plan, pending, sync });
   useEffect(() => {
-    live.current = { plan, pending };
-  }, [plan, pending]);
+    live.current = { plan, pending, sync };
+  }, [plan, pending, sync]);
 
   const send = useCallback(
     async (
@@ -70,7 +81,9 @@ export function usePlanUpdate(initial: HeldPlan) {
       announcement: (payload: unknown) => string,
     ): Promise<PlanUpdateSent> => {
       const held = live.current.plan;
-      if (live.current.pending !== null) {
+      // Another panel's write in flight counts too: this one would be worked out against the plan
+      // as it stood before that one lands.
+      if (live.current.pending !== null || live.current.sync.writesInFlight > 0) {
         setOutcome({ kind: "refused", update, refusal: ANOTHER_CHANGE_ON_ITS_WAY });
         return { ok: false };
       }
@@ -90,6 +103,8 @@ export function usePlanUpdate(initial: HeldPlan) {
 
       live.current = { ...live.current, pending: update };
       setPending(update);
+      const { beginWrite, endWrite, publish } = live.current.sync;
+      beginWrite();
       try {
         const sent = await post(url, bodyWith(held.version, key));
         if (!sent.ok) {
@@ -98,15 +113,24 @@ export function usePlanUpdate(initial: HeldPlan) {
         }
         delete keys.current[update];
         const answered = recordFromUpdateAnswer(sent.payload);
-        setPlan(
+        const next =
           answered === null
             ? null
             : {
                 state: answered.state,
                 version: answered.version,
                 mobileCheck: answered.mobileCheck ?? held.mobileCheck,
-              },
-        );
+              };
+        setPlan(next);
+        // Only what the service actually answered with is shared: a number check this panel merely
+        // carried forward is left for each panel to keep its own.
+        if (answered !== null) {
+          publish({
+            state: answered.state,
+            version: answered.version,
+            ...(answered.mobileCheck === null ? {} : { mobileCheck: answered.mobileCheck }),
+          });
+        }
         const landed = announcement(sent.payload);
         setOutcome({
           kind: "recorded",
@@ -120,6 +144,7 @@ export function usePlanUpdate(initial: HeldPlan) {
       } finally {
         live.current = { ...live.current, pending: null };
         setPending(null);
+        endWrite();
         router.refresh();
       }
     },

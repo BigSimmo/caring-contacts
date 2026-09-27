@@ -8,6 +8,7 @@ import { cn, ignoreUnavailableActivation } from "@/components/ui-primitives";
 
 import type { WorkspaceOverlayCommit } from "./overlays/overlay-commits";
 import { OVERLAY_TRIGGER_CLASS, WorkspaceOverlayTrigger } from "./overlays/overlay-trigger";
+import { usePlanSync } from "./plan-sync";
 import {
   ACTING_ACCOUNT_ENDPOINT,
   ACTING_ACCOUNT_UNREADABLE,
@@ -107,8 +108,11 @@ const blockHeadingClass = "text-sm font-semibold text-[color:var(--text-heading)
 const NOTHING_LEAVES_THIS_SYSTEM =
   "Everything below is recorded in this demonstration only. There is no messaging provider connected to this workspace at all, so nothing any of these controls does can send a message to anybody or stop one being sent.";
 
+export { PlanSyncProvider } from "./plan-sync";
+
 export function PlanActions({ context }: PlanActionsProps) {
   const router = useRouter();
+  const sync = usePlanSync();
   const [plan, setPlan] = useState<{ state: PlanActionsContext["planState"]; version: number } | null>({
     state: context.planState,
     version: context.planVersion,
@@ -164,6 +168,13 @@ export function PlanActions({ context }: PlanActionsProps) {
         : { state: context.planState, version: context.planVersion },
     );
   }
+  // Another panel on this page wrote to the plan and was answered with a NEWER version: adopt it,
+  // monotone for the same reason as the prop sync above. See `plan-sync.ts`.
+  if (sync.latest !== null && (plan === null || sync.latest.version > plan.version)) {
+    setPlan({ state: sync.latest.state, version: sync.latest.version });
+  }
+  // Another panel's write in flight guards these controls exactly as this card's own does.
+  const anyChangeOnItsWay = changeOnItsWay || sync.writesInFlight > (changeOnItsWay ? 1 : 0);
 
   /**
    * One key per SUBMISSION in flight, minted at its first confirmation and reused for every retry.
@@ -208,10 +219,10 @@ export function PlanActions({ context }: PlanActionsProps) {
    * Written in an effect rather than during render: reading or writing a ref during render is what
    * `react-hooks/refs` forbids, and it is right to, and an effect has run long before a click.
    */
-  const live = useRef({ plan, changeOnItsWay, destination, handoverNote, claimedHere });
+  const live = useRef({ plan, changeOnItsWay: anyChangeOnItsWay, destination, handoverNote, claimedHere });
   useEffect(() => {
-    live.current = { plan, changeOnItsWay, destination, handoverNote, claimedHere };
-  }, [plan, changeOnItsWay, destination, handoverNote, claimedHere]);
+    live.current = { plan, changeOnItsWay: anyChangeOnItsWay, destination, handoverNote, claimedHere };
+  }, [plan, anyChangeOnItsWay, destination, handoverNote, claimedHere]);
 
   const stateFor = useCallback(
     (action: PlanActionId, from: typeof live.current, actingAccount: string): PlanActionState => ({
@@ -232,8 +243,12 @@ export function PlanActions({ context }: PlanActionsProps) {
   /** The render-time answer: one moment, passed as both, because nothing has changed yet. */
   const renderState = useCallback(
     (action: PlanActionId): PlanActionState =>
-      stateFor(action, { plan, changeOnItsWay, destination, handoverNote, claimedHere }, context.actingAccount),
-    [changeOnItsWay, claimedHere, context.actingAccount, destination, handoverNote, plan, stateFor],
+      stateFor(
+        action,
+        { plan, changeOnItsWay: anyChangeOnItsWay, destination, handoverNote, claimedHere },
+        context.actingAccount,
+      ),
+    [anyChangeOnItsWay, claimedHere, context.actingAccount, destination, handoverNote, plan, stateFor],
   );
 
   const refusalAtOpen = useCallback(
@@ -335,6 +350,7 @@ export function PlanActions({ context }: PlanActionsProps) {
       keys.current[action] = { fingerprint, key };
 
       setChangeOnItsWay(true);
+      sync.beginWrite();
       try {
         const sent = await post(
           action === "reassignment" || action === "claim"
@@ -381,6 +397,7 @@ export function PlanActions({ context }: PlanActionsProps) {
           // from the prop it was rendered with — see the module note.
           const answered = planFromWriteAnswer(sent.payload);
           setPlan(answered);
+          if (answered !== null) sync.publish(answered);
           setOutcome({ kind: "recorded", action, announcement: lifecycleAnnouncement(action, answered !== null) });
         }
         // The rest of this screen was rendered on the server before this change, so it is asked for
@@ -389,9 +406,10 @@ export function PlanActions({ context }: PlanActionsProps) {
         router.refresh();
       } finally {
         setChangeOnItsWay(false);
+        sync.endWrite();
       }
     },
-    [context.actingActorId, context.destinations, context.planId, router, stateFor],
+    [context.actingActorId, context.destinations, context.planId, router, stateFor, sync],
   );
 
   /**

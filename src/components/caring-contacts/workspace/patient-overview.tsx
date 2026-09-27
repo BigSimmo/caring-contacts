@@ -23,7 +23,7 @@ import { ListEmptyState } from "./list-empty-state";
 import { PatientReplies } from "./inbound-replies";
 import { ExitOnlyOverlayTrigger } from "./overlays/exit-only-overlay-trigger";
 import type { PlanActionsContext } from "./plan-action-rules";
-import { PlanActions } from "./plan-actions";
+import { PlanActions, PlanSyncProvider } from "./plan-actions";
 import { MobileCheckPanel } from "./patient-updates/mobile-check-panel";
 import { offeredUpdates, type PatientUpdatesContext } from "./patient-updates/patient-update-rules";
 import { RecordAChange } from "./patient-updates/record-a-change";
@@ -631,35 +631,41 @@ function EpisodeOverview({
         The actions sit two-up from 1280px: the plan's own actions on the left, and what has happened
         to the patient plus the number check on the right. Stacked in the same order below that.
       */}
-      <div className="grid min-w-0 gap-5 xl:grid-cols-2 xl:items-start">
-        <div className={cardClass}>
-          <PlanActions context={actions} />
-        </div>
+      {/*
+        One provider around all three writing panels, so a write in any of them hands the others the
+        plan's new version and blocks them while it is in flight. See `plan-sync.ts`.
+      */}
+      <PlanSyncProvider>
+        <div className="grid min-w-0 gap-5 xl:grid-cols-2 xl:items-start">
+          <div className={cardClass}>
+            <PlanActions context={actions} />
+          </div>
 
-        {/*
+          {/*
         What has happened to the patient since discharge, and the test text to their number. Both
         write, so both live in client components beside the plan actions; each renders nothing when
         the role or the plan's state leaves it nothing the service would accept. The contact detail
         edits need the episode read, because nobody should change a number they cannot see.
       */}
-        {updates === undefined ? null : (
-          <div className="flex min-w-0 flex-col gap-5">
-            <RecordAChangeCard
-              updates={updates}
-              detail={
-                episode === null
-                  ? null
-                  : {
-                      patientName: episode.patientName,
-                      preferredName: episode.preferredName,
-                      patientMobileNumber: episode.patientMobileNumber,
-                    }
-              }
-            />
-            <MobileCheckCard updates={updates} />
-          </div>
-        )}
-      </div>
+          {updates === undefined ? null : (
+            <div className="flex min-w-0 flex-col gap-5">
+              <RecordAChangeCard
+                updates={updates}
+                detail={
+                  episode === null
+                    ? null
+                    : {
+                        patientName: episode.patientName,
+                        preferredName: episode.preferredName,
+                        patientMobileNumber: episode.patientMobileNumber,
+                      }
+                }
+              />
+              <MobileCheckCard updates={updates} />
+            </div>
+          )}
+        </div>
+      </PlanSyncProvider>
 
       <section aria-labelledby="caring-contacts-schedule-heading" className={cardClass}>
         <div className="min-w-0">
