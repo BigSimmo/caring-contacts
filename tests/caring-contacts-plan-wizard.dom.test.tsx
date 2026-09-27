@@ -25,6 +25,14 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+/** The shared parts split out of `plan-wizard.tsx`; the source scans below read them with it. */
+const PLAN_WIZARD_SPLIT_MODULES = [
+  "wizard-styles.ts",
+  "wizard-fields.tsx",
+  "intake-seed.tsx",
+  "wizard-chrome.tsx",
+  "wizard-wording.ts",
+] as const;
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
 
 // The wizard navigates once, after a plan has been created and after the draft has been cleared.
@@ -2157,7 +2165,9 @@ describe("stage 4 — what the screen promises matches what confirming does (Rul
       /\bdoes not start it\b/i,
     ];
 
-    for (const name of ["plan-wizard.tsx", "plan-activation.ts"]) {
+    // The wizard's shared parts were split out of `plan-wizard.tsx`; a claim moved with them must
+    // still be caught, so they are read here too.
+    for (const name of ["plan-wizard.tsx", "plan-activation.ts", ...PLAN_WIZARD_SPLIT_MODULES]) {
       const source = readFileSync(
         path.join(process.cwd(), "src", "components", "caring-contacts", "workspace", "plan-wizard", name),
         "utf8",
@@ -2711,9 +2721,27 @@ describe("the caring-contacts plan wizard — Task 11a's decision overlays", () 
     expect(wizardSource, "the source scan read nothing, so the two absences below are vacuous").toContain(
       "export function PlanWizard",
     );
-    expect(wizardSource, "the wizard reaches for the sealed message module itself").not.toContain("message-copy");
-    // And the words themselves are not written out here under another name.
-    expect(wizardSource, "a patient-visible greeting was written into the wizard").not.toMatch(/thinking of you/i);
+    // The parts split out of the wizard are part of the same client component, so both absences are
+    // checked across them as well as across the wizard's own file.
+    for (const [label, source] of [
+      ["plan-wizard.tsx", wizardSource],
+      ...PLAN_WIZARD_SPLIT_MODULES.map(
+        (name) =>
+          [
+            name,
+            stripSourceComments(
+              readFileSync(
+                path.join(process.cwd(), "src", "components", "caring-contacts", "workspace", "plan-wizard", name),
+                "utf8",
+              ),
+            ),
+          ] as const,
+      ),
+    ]) {
+      expect(source, `${label} reaches for the sealed message module itself`).not.toContain("message-copy");
+      // And the words themselves are not written out here under another name.
+      expect(source, `a patient-visible greeting was written into ${label}`).not.toMatch(/thinking of you/i);
+    }
   });
 });
 
