@@ -11,6 +11,7 @@ import { AutomatedState } from "./automated-state";
 import { ListEmptyState } from "./list-empty-state";
 import { TeamClaimList, type TeamClaimListProps } from "./team-claim-list";
 import { workspacePanelFlush } from "./surfaces";
+import { plural } from "./count-wording";
 
 /**
  * Where this team's caring-contact work is sitting -- the Team screen's body (Phase 2B Task 18).
@@ -96,10 +97,6 @@ const noteClass = "max-w-[var(--measure)] text-sm leading-6 text-[color:var(--te
 /** The id the "Reassign work" control points its description at. A constant, so no `useId` hook is
  *  needed and this stays a Server Component; the screen renders one such control. */
 const REASSIGN_NOTE_ID = "caring-contacts-team-reassign-note";
-
-function plural(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`;
-}
 
 /**
  * Plain words for what a plan's own state is doing to it.

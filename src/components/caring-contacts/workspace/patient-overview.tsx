@@ -28,6 +28,7 @@ import { MobileCheckPanel } from "./patient-updates/mobile-check-panel";
 import { offeredUpdates, type PatientUpdatesContext } from "./patient-updates/patient-update-rules";
 import { RecordAChange } from "./patient-updates/record-a-change";
 import { workspacePanelPadded } from "./surfaces";
+import { plural } from "./count-wording";
 
 /**
  * One patient's caring-contact episode -- who they are, which plan is running, what has happened
@@ -1356,10 +1357,6 @@ function notSentExplanation(entry: StoredContact, plan: PlanRecord): { because: 
 /** Whether the plan has ended. `"inProgress"` is the one outcome that is not an ending. */
 function isTerminalOutcome(outcome: PlanOutcome): boolean {
   return outcome !== "inProgress";
-}
-
-function plural(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`;
 }
 
 /**

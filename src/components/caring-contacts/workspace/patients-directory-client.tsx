@@ -15,6 +15,7 @@ import { AutomatedState } from "./automated-state";
 import { ListEmptyState } from "./list-empty-state";
 import type { PatientsDirectoryRow } from "./patients-directory-row";
 import { workspacePanelPadded } from "./surfaces";
+import { plural } from "./count-wording";
 
 /**
  * The team's caseload -- the CLIENT half, and the reason the boundary exists.
@@ -124,10 +125,6 @@ function matchesQuery(row: PatientsDirectoryRow, query: string): boolean {
   if (query === "") return true;
   const needle = query.toLowerCase();
   return `${row.patientName ?? ""} ${row.patientId} ${row.planId} ${row.referralId}`.toLowerCase().includes(needle);
-}
-
-function plural(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`;
 }
 
 /** The reason and the remedy for every contact this plan will not send, covering both causes. */

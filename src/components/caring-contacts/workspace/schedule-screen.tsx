@@ -22,6 +22,7 @@ import { CONTACT_STATE_LABELS, MESSAGE_TYPE_LABELS } from "./contact-vocabulary"
 import { ListEmptyState } from "./list-empty-state";
 import { WorkspaceOverlayTrigger } from "./overlays/overlay-trigger";
 import { workspacePanelPadded } from "./surfaces";
+import { plural } from "./count-wording";
 
 /**
  * The Schedule screen -- what this team's caring-contact plans put on one AWST day, and what the
@@ -170,10 +171,6 @@ function awstClockLabel(instant: Date): string {
   const suffix = hour < 12 ? "am" : "pm";
   const twelveHour = hour % 12 === 0 ? 12 : hour % 12;
   return `${twelveHour}:${String(minute).padStart(2, "0")} ${suffix} AWST`;
-}
-
-function plural(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`;
 }
 
 /** Plain words for what a plan's own state is doing to its contacts. */
