@@ -110,7 +110,7 @@ export default async function CaringContactsAccessTrailPage() {
   return (
     <CaringContactsShell
       title="Access trail"
-      description="Who opened, searched or changed which record, and when. Read-only. Every patient, number and message in this workspace is invented; nothing here is ever sent to a real number."
+      description="Who opened, searched or changed which record, and when. Read-only."
       serviceState={serviceState}
     >
       <AccessTrailList

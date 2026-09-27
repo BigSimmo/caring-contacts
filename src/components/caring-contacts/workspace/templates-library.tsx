@@ -489,29 +489,33 @@ function PathwayVersionRow({ version }: { version: PathwayVersion }) {
         </p>
       </div>
 
-      <dl className="mt-3 flex min-w-0 flex-col gap-2 text-sm leading-6">
-        <div className="min-w-0">
-          <dt className="text-xs text-[color:var(--text-muted)]">Lifecycle</dt>
+      {/*
+        A label column from `sm`, so a desktop row reads across instead of stacking six label/value
+        pairs down a full-width card; on a phone each label still sits above its value.
+      */}
+      <dl className="mt-3 grid min-w-0 gap-2 text-sm leading-6 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-x-4">
+        <div className="min-w-0 sm:col-span-2 sm:grid sm:grid-cols-subgrid">
+          <dt className="text-xs text-[color:var(--text-muted)] sm:pt-0.5">Lifecycle</dt>
           <dd className="min-w-0 text-[color:var(--text)]">{PATHWAY_VERSION_STATE_WORDING[version.state]}</dd>
         </div>
-        <div className="min-w-0">
-          <dt className="text-xs text-[color:var(--text-muted)]">Publication</dt>
+        <div className="min-w-0 sm:col-span-2 sm:grid sm:grid-cols-subgrid">
+          <dt className="text-xs text-[color:var(--text-muted)] sm:pt-0.5">Publication</dt>
           <dd className="min-w-0 text-[color:var(--text)]">{publicationWording(version)}</dd>
         </div>
-        <div className="min-w-0">
-          <dt className="text-xs text-[color:var(--text-muted)]">Retirement</dt>
+        <div className="min-w-0 sm:col-span-2 sm:grid sm:grid-cols-subgrid">
+          <dt className="text-xs text-[color:var(--text-muted)] sm:pt-0.5">Retirement</dt>
           <dd className="min-w-0 text-[color:var(--text)]">{retirementWording(version)}</dd>
         </div>
-        <div className="min-w-0">
-          <dt className="text-xs text-[color:var(--text-muted)]">Contact cadence</dt>
+        <div className="min-w-0 sm:col-span-2 sm:grid sm:grid-cols-subgrid">
+          <dt className="text-xs text-[color:var(--text-muted)] sm:pt-0.5">Contact cadence</dt>
           <dd className="min-w-0 text-[color:var(--text)]">
             {version.snapshot.cadenceLabels.length === 0
               ? "This record holds no cadence."
               : joinPhrases(version.snapshot.cadenceLabels)}
           </dd>
         </div>
-        <div className="min-w-0">
-          <dt className="text-xs text-[color:var(--text-muted)]">Message wording</dt>
+        <div className="min-w-0 sm:col-span-2 sm:grid sm:grid-cols-subgrid">
+          <dt className="text-xs text-[color:var(--text-muted)] sm:pt-0.5">Message wording</dt>
           <dd className="min-w-0 text-[color:var(--text)]">
             {held.length === 0
               ? "This record holds no message wording at all."
@@ -521,8 +525,8 @@ function PathwayVersionRow({ version }: { version: PathwayVersion }) {
               : ` Nothing has been written for ${joinPhrases(unwritten.map((type) => MESSAGE_TYPE_WORDING[type]))}.`}
           </dd>
         </div>
-        <div className="min-w-0">
-          <dt className="text-xs text-[color:var(--text-muted)]">Approval</dt>
+        <div className="min-w-0 sm:col-span-2 sm:grid sm:grid-cols-subgrid">
+          <dt className="text-xs text-[color:var(--text-muted)] sm:pt-0.5">Approval</dt>
           <dd className="min-w-0">
             <ApprovalRecord approvals={version.approvals} provenance={version.snapshot.provenance} />
           </dd>
@@ -545,7 +549,7 @@ function PathwayVersionRow({ version }: { version: PathwayVersion }) {
         <Link
           href={pathwayRoute(version.id)}
           data-internal-link="true"
-          className="inline-flex min-h-tap min-w-0 items-center rounded-[var(--radius-md)] px-2 text-sm font-semibold text-[color:var(--clinical-accent)] underline decoration-dotted underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--focus)]"
+          className="inline-flex min-h-tap min-w-0 items-center rounded-[var(--radius-md)] text-sm font-semibold text-[color:var(--clinical-accent)] underline decoration-dotted underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--focus)]"
         >
           <span className="min-w-0 break-words">Open this governed record</span>
           {/*

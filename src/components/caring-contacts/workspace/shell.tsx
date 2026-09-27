@@ -578,8 +578,13 @@ export function CaringContactsShell({
                 More destinations
               </h2>
               <p className="mt-1 text-xs leading-5 text-[color:var(--text-muted)]">
-                What each destination holds. The ones with a screen behind them are links; the rest state what they will
-                hold once they are built.
+                <span className="md:hidden">
+                  What each destination holds. The ones with a screen behind them are links; the rest state what they
+                  will hold once they are built.
+                </span>
+                <span className="hidden md:inline">
+                  Destinations not built yet, and what each will hold. The built ones are in the navigation.
+                </span>
               </p>
               {/*
                   A grid, not a stack, now that this panel spans the content column instead of
@@ -615,6 +620,19 @@ export function CaringContactsShell({
                 ))}
               </ul>
             </section>
+
+            {/*
+              Said once here rather than appended to every screen's description, where it made
+              each description a line longer and pushed the screen's own purpose out of the first
+              sentence a reader sees. The header's synthetic marker carries the short form.
+            */}
+            <p
+              data-testid="caring-contacts-invented-data-note"
+              className="mt-6 max-w-[var(--measure)] text-xs leading-5 text-[color:var(--text-muted)]"
+            >
+              Every patient, number and message in this workspace is invented; nothing here is ever sent to a real
+              number.
+            </p>
           </div>
         </main>
       </div>

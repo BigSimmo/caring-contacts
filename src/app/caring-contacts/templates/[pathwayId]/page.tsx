@@ -164,7 +164,7 @@ export default async function CaringContactsTemplateDetailPage({ params }: { par
   return (
     <CaringContactsShell
       title="Template"
-      description="One governed pathway version: where it has got to, who approved it, and the wording its own record holds. Every patient, number and message in this workspace is invented; nothing here is ever sent to a real number."
+      description="One governed pathway version: where it has got to, who approved it, and the wording its own record holds."
       serviceState={serviceState}
     >
       <TemplateDetail view={view} />

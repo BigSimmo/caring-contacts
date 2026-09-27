@@ -174,7 +174,7 @@ export default async function CaringContactsNewPlanPage({
   return (
     <CaringContactsShell
       title="New plan"
-      description="Putting a discharged patient onto a caring-contact plan: what this team is working from, which governed pathway the plan runs, the patient's own details, and a last read-through before it starts. Every patient, number and message in this workspace is invented; nothing here is ever sent to a real number."
+      description="Putting a discharged patient onto a caring-contact plan: what this team is working from, which governed pathway the plan runs, the patient's own details, and a last read-through before it starts."
       serviceState={serviceState}
       showPrimaryControl={false}
     >

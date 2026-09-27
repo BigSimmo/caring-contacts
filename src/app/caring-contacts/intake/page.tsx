@@ -56,7 +56,7 @@ export default async function CaringContactsIntakePage() {
   return (
     <CaringContactsShell
       title="Referral intake"
-      description="Manual clinical intake fallback for hospital discharge referrals when structured electronic feeds are unavailable (Hazard H-44). Every patient, number and message in this workspace is invented; nothing here is ever sent to a real number."
+      description="Manual clinical intake fallback for hospital discharge referrals when structured electronic feeds are unavailable (Hazard H-44)."
       serviceState={serviceStateRead.released}
     >
       <ManualIntakeForm />
