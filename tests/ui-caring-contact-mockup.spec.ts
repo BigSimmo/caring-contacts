@@ -284,7 +284,9 @@ test.describe("@mockup Caring Contact linked prototype", () => {
   test("session, permission and version scenarios remain explicit and non-destructive", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await gotoRoute(page, `${routes.plan}?overlay=pause&scenario=permission-unavailable`, "Plan and contact detail");
-    await expect(page.getByRole("button", { name: "Hold this plan" })).toHaveAttribute("aria-disabled", "true");
+    await expect(
+      page.getByRole("dialog", { name: "Hold this plan" }).getByRole("button", { name: "Hold this plan" }),
+    ).toHaveAttribute("aria-disabled", "true");
     await gotoRoute(
       page,
       `${routes.review}&overlay=final-activation&scenario=version-conflict`,
@@ -323,7 +325,7 @@ test.describe("@mockup Caring Contact linked prototype", () => {
     await gotoRoute(page, `${routes.plan}?overlay=pause`, "Plan and contact detail");
     const planDetail = page.getByTestId("caring-contact-screen-plan-detail");
     const planStatusChip = planDetail.locator('[data-testid="chip"][data-appearance="status"]');
-    await page.getByRole("button", { name: "Hold this plan" }).click();
+    await page.getByRole("dialog", { name: "Hold this plan" }).getByRole("button", { name: "Hold this plan" }).click();
     await expect(planStatusChip.filter({ hasText: "Paused" })).toBeVisible();
     await expect(page).not.toHaveURL(/overlay=pause/);
     await page.reload({ waitUntil: "domcontentloaded" });
