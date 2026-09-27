@@ -185,7 +185,7 @@ export default async function CaringContactsReportsPage() {
   return (
     <CaringContactsShell
       title="Reports"
-      description="Aggregate operational measures for this team, and how far the programme reaches. No measure here is a statement about how any patient is. Every patient, number and message in this workspace is invented; nothing here is ever sent to a real number."
+      description="Aggregate operational measures for this team, and how far the programme reaches. No measure here is a statement about how any patient is."
       serviceState={serviceState}
     >
       <OperationalReports

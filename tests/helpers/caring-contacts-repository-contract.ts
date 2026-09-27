@@ -3208,6 +3208,33 @@ export function describeCaringContactRepositoryContract(label: string, factory: 
         expect(trail.some((event) => event.action === "access:view:plan")).toBe(true);
       });
 
+      it("reads the access trail newest first on request, so a capped page keeps the most recent entries", async () => {
+        const store = await newStore();
+        const plan = await createActivePlan(store);
+        await store.recordAccess({
+          actorId: COORDINATOR_A.id,
+          actorRoles: ["coordinator"],
+          teamId: COORDINATOR_A.teamId,
+          kind: "view",
+          objectType: "plan",
+          objectId: plan.plan.id,
+          outcome: "allowed",
+        });
+
+        const oldestFirst = await store.listAccessTrail({ limit: 500, offset: 0 }, { actor: AUDITOR_A });
+        expect(oldestFirst.length).toBeGreaterThan(1);
+        const newestFirst = await store.listAccessTrail(
+          { limit: 500, offset: 0, newestFirst: true },
+          { actor: AUDITOR_A },
+        );
+        expect(newestFirst).toEqual([...oldestFirst].reverse());
+
+        // Capped at one entry, the two orders keep opposite ends of the window.
+        const [newest] = await store.listAccessTrail({ limit: 1, offset: 0, newestFirst: true }, { actor: AUDITOR_A });
+        expect(newest).toEqual(oldestFirst[oldestFirst.length - 1]);
+        expect(newest?.action).toBe("access:view:plan");
+      });
+
       it("scopes listAccessTrail to viewAccessTrail (the auditor), returning empty for a coordinator", async () => {
         const store = await newStore();
         const plan = await createActivePlan(store);

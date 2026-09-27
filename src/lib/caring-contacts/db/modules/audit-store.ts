@@ -97,7 +97,7 @@ export class AuditStore {
       const where = conditions.length === 0 ? "" : ` where ${conditions.join(" and ")}`;
       const result = await connection.query(
         `select ${AUDIT_EVENT_COLUMNS} from caring_contacts.audit_events${where}
-          order by id offset ${placeholder(input.offset)} limit ${placeholder(input.limit)}`,
+          order by id${input.newestFirst === true ? " desc" : ""} offset ${placeholder(input.offset)} limit ${placeholder(input.limit)}`,
         values,
       );
       return result.rows.map(toAuditEvent);

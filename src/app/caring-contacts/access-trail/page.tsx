@@ -81,7 +81,13 @@ export default async function CaringContactsAccessTrailPage() {
     { kind: "search", objectType: "auditTrail", objectId: "all" },
     () =>
       store.listAccessTrail(
-        { fromIso: windowFrom.toISOString(), toIso: now.toISOString(), limit: ACCESS_TRAIL_LIMIT, offset: 0 },
+        {
+          fromIso: windowFrom.toISOString(),
+          toIso: now.toISOString(),
+          limit: ACCESS_TRAIL_LIMIT,
+          offset: 0,
+          newestFirst: true,
+        },
         { actor },
       ),
   );
@@ -104,7 +110,7 @@ export default async function CaringContactsAccessTrailPage() {
   return (
     <CaringContactsShell
       title="Access trail"
-      description="Who opened, searched or changed which record, and when. Read-only. Every patient, number and message in this workspace is invented; nothing here is ever sent to a real number."
+      description="Who opened, searched or changed which record, and when. Read-only."
       serviceState={serviceState}
     >
       <AccessTrailList

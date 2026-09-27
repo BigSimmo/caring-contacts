@@ -164,7 +164,7 @@ export default async function CaringContactsTemplatesPage({
   return (
     <CaringContactsShell
       title="Templates"
-      description="The governed pathway versions this team holds, and the approval history behind each one. Every patient, number and message in this workspace is invented; nothing here is ever sent to a real number."
+      description="The governed pathway versions this team holds, and the approval history behind each one."
       serviceState={serviceState}
     >
       <TemplatesLibrary versions={versions} filter={filter} mayViewPathwayVersions={mayViewPathwayVersions} />

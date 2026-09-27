@@ -131,7 +131,7 @@ export default async function CaringContactsTodayPage() {
   return (
     <CaringContactsShell
       title="Today"
-      description="The day's caring-contact work for this team. Every patient, number and message in this workspace is invented; nothing here is ever sent to a real number."
+      description="The day's caring-contact work for this team."
       serviceState={serviceState}
     >
       <TodayDashboard

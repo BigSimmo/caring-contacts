@@ -2738,11 +2738,16 @@ test.describe("caring-contacts guidance and reports", () => {
     await expect(page.getByTestId("caring-contacts-reach-threshold")).toContainText("set under governance");
   });
 
-  test("reaches guidance and reports from the More panel at 1024px", async ({ page }) => {
+  test("reaches guidance and reports from the rail at 1024px", async ({ page }) => {
     await openWorkspace(page, 1024);
 
-    const panel = page.getByRole("region", { name: "More destinations" });
-    await panel.getByRole("link", { name: "Reports" }).click();
+    // From 768px the rail carries every built destination and the More panel lists only the
+    // unbuilt ones, so a desktop reader reaches Reports from the rail.
+    const rail = page.getByRole("navigation", { name: "Workspace" });
+    await expect(
+      page.getByRole("region", { name: "More destinations" }).getByRole("link", { name: "Reports" }),
+    ).toBeHidden();
+    await rail.getByRole("link", { name: "Reports" }).click();
 
     await expect(page.getByRole("heading", { level: 1, name: REPORTS_SCREEN.heading })).toBeVisible();
     expect(new URL(page.url()).pathname).toBe(REPORTS_SCREEN.route);
@@ -2931,11 +2936,12 @@ test.describe("caring-contacts team", () => {
     await expect(page.getByRole("group", { name: "Nobody is carrying work" })).toBeVisible();
   });
 
-  test("reaches the team screen from the More panel at 1024px", async ({ page }) => {
+  test("reaches the team screen from the rail at 1024px", async ({ page }) => {
     await openWorkspace(page, 1024);
 
-    const panel = page.getByRole("region", { name: "More destinations" });
-    await panel.getByRole("link", { name: "Team" }).click();
+    // From 768px the More panel lists only unbuilt destinations; Team is reached from the rail.
+    const rail = page.getByRole("navigation", { name: "Workspace" });
+    await rail.getByRole("link", { name: "Team" }).click();
 
     await expect(page.getByRole("heading", { level: 1, name: TEAM_SCREEN.heading, exact: true })).toBeVisible();
     expect(new URL(page.url()).pathname).toBe(TEAM_SCREEN.route);

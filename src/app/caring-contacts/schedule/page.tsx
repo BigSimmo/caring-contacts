@@ -158,7 +158,7 @@ export default async function CaringContactsSchedulePage({
   return (
     <CaringContactsShell
       title="Schedule"
-      description="Contacts due, day by day, in the approved sending windows. Every patient, number and message in this workspace is invented; nothing here is ever sent to a real number."
+      description="Contacts due, day by day, in the approved sending windows."
       serviceState={serviceState}
     >
       <ScheduleScreen

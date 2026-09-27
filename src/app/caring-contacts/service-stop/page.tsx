@@ -91,7 +91,7 @@ export default async function CaringContactsServiceStopPage() {
   return (
     <CaringContactsShell
       title="Service stop"
-      description="Stopping all caring-contact sending for the whole service during an incident, and the three approvals that start it again. Every patient, number and message in this workspace is invented; nothing here is ever sent to a real number."
+      description="Stopping all caring-contact sending for the whole service during an incident, and the three approvals that start it again."
       serviceState={serviceState}
     >
       <ServiceStopScreen model={model} />

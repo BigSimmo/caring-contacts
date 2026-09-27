@@ -240,7 +240,7 @@ export default async function CaringContactsPatientsPage({
   return (
     <CaringContactsShell
       title="Patients"
-      description="Every patient this team holds a caring-contact plan for, and where each plan has got to. Every patient, number and message in this workspace is invented; nothing here is ever sent to a real number."
+      description="Every patient this team holds a caring-contact plan for, and where each plan has got to."
       serviceState={serviceState}
     >
       <PatientsDirectory

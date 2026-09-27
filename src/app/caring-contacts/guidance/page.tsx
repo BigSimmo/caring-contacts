@@ -83,7 +83,7 @@ export default async function CaringContactsGuidancePage() {
   return (
     <CaringContactsShell
       title="Guidance"
-      description="How this programme is run, where its boundaries are, and what to do when a system it depends on is unavailable. Every patient, number and message in this workspace is invented; nothing here is ever sent to a real number."
+      description="How this programme is run, where its boundaries are, and what to do when a system it depends on is unavailable."
       serviceState={serviceStateRead.released}
     >
       <ProgrammeGuidance />

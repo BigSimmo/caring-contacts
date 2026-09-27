@@ -3,7 +3,6 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowRight,
-  Calendar,
   CheckCircle2,
   Clock,
   FilePlus,
@@ -11,6 +10,7 @@ import {
   ShieldAlert,
   UserCheck,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -127,169 +127,99 @@ export function TodayDashboard({
 
   return (
     <div data-testid="caring-contacts-today-dashboard" className="space-y-8">
-      {/* 1. Urgent Triage Bar */}
+      {/* 1. Urgent triage: four cards built from one shape, so their figures and footers line up. */}
       <section aria-labelledby="triage-bar-heading" data-testid="caring-contacts-urgent-triage" className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2
-            id="triage-bar-heading"
-            className="text-sm font-semibold uppercase tracking-wider text-[color:var(--text-muted)]"
-          >
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h2 id="triage-bar-heading" className="text-base font-semibold text-[color:var(--text-heading)]">
             Clinical triage status
           </h2>
           <span className="text-xs text-[color:var(--text-muted)]">
-            AWST Day: <time dateTime={todayCalendarDay}>{todayCalendarDay}</time>
+            AWST day: <time dateTime={todayCalendarDay}>{todayCalendarDay}</time>
           </span>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Card: Due Today */}
-          <div className={`${workspacePanelPadded} flex flex-col justify-between`}>
-            <div>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-medium text-[color:var(--text-muted)]">Due today</span>
-                <span
-                  className={`${badgeClass} ${
-                    counts.due > 0
-                      ? "bg-[color:var(--clinical-accent-soft)] text-[color:var(--clinical-accent)]"
-                      : "bg-[color:var(--surface-subtle)] text-[color:var(--text-muted)]"
-                  }`}
-                >
-                  <Clock aria-hidden="true" className="size-3.5" />
-                  {serviceState.stopped ? "Dispatch stopped" : counts.due > 0 ? "Dispatch ready" : "None due"}
-                </span>
-              </div>
-              <p className="mt-2 text-2xl font-bold text-[color:var(--text-heading)]">{counts.due}</p>
-            </div>
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[color:var(--border)] pt-3 text-xs text-[color:var(--text-muted)]">
-              <span>
-                {windows.length > 0 ? `Windows: ${windows.map((w) => w.label).join(" · ")}` : "No sending windows"}
-              </span>
-              <Link
-                href={scheduleDayRoute(todayCalendarDay)}
-                data-internal-link="true"
-                className="inline-flex min-h-tap shrink-0 items-center gap-1 font-medium text-[color:var(--command)] hover:underline"
-              >
-                Schedule <ArrowRight aria-hidden="true" className="size-3" />
-              </Link>
-            </div>
-          </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <TriageCard
+            label="Due today"
+            value={counts.due}
+            badge={{
+              tone: serviceState.stopped ? "danger" : counts.due > 0 ? "accent" : "neutral",
+              icon: Clock,
+              text: serviceState.stopped ? "Dispatch stopped" : counts.due > 0 ? "Dispatch ready" : "None due",
+            }}
+            footnote={windows.length > 0 ? `Windows: ${windows.map((w) => w.label).join(" · ")}` : "No sending windows"}
+            link={{ href: scheduleDayRoute(todayCalendarDay), label: "Schedule" }}
+          />
 
-          {/* Card: Operational Reviews / Exceptions */}
-          <div className={`${workspacePanelPadded} flex flex-col justify-between`}>
-            <div>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-medium text-[color:var(--text-muted)]">Needs review</span>
-                <span
-                  className={`${badgeClass} ${
-                    reviewBacklog > 0
-                      ? "bg-[color:var(--warning-bg)] text-[color:var(--warning-text)]"
-                      : "bg-[color:var(--surface-subtle)] text-[color:var(--text-muted)]"
-                  }`}
-                >
-                  <AlertTriangle aria-hidden="true" className="size-3.5" />
-                  {reviewBacklog > 0 ? "Exceptions" : "Clear"}
-                </span>
-              </div>
-              <p className="mt-2 text-2xl font-bold text-[color:var(--text-heading)]">{reviewBacklog}</p>
-            </div>
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[color:var(--border)] pt-3 text-xs text-[color:var(--text-muted)]">
-              <span>
-                Failed, missed or invalid numbers, on any day
-                {counts.needsReview > 0 ? ` (${counts.needsReview} today)` : ""}
-              </span>
-              {reviewBacklog > 0 ? (
-                <Link
-                  href={CARING_CONTACTS_ROUTES.team}
-                  data-internal-link="true"
-                  className="inline-flex min-h-tap shrink-0 items-center gap-1 font-medium text-[color:var(--command)] hover:underline"
-                >
-                  Team roster <ArrowRight aria-hidden="true" className="size-3" />
-                </Link>
-              ) : null}
-            </div>
-          </div>
+          <TriageCard
+            label="Needs review"
+            value={reviewBacklog}
+            badge={{
+              tone: reviewBacklog > 0 ? "warning" : "neutral",
+              icon: AlertTriangle,
+              text: reviewBacklog > 0 ? "Exceptions" : "Clear",
+            }}
+            footnote={`Failed, missed or invalid numbers, on any day${
+              counts.needsReview > 0 ? ` (${counts.needsReview} today)` : ""
+            }`}
+            link={reviewBacklog > 0 ? { href: CARING_CONTACTS_ROUTES.team, label: "Team roster" } : null}
+          />
 
-          {/* Card: Unclaimed Work */}
-          <div className={`${workspacePanelPadded} flex flex-col justify-between`}>
-            <div>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-medium text-[color:var(--text-muted)]">Unclaimed cases</span>
-                <span
-                  className={`${badgeClass} ${
-                    unclaimed.state === "escalated"
-                      ? "bg-[color:var(--danger-bg)] text-[color:var(--danger-text)]"
-                      : unclaimed.state === "withinThreshold"
-                        ? "bg-[color:var(--warning-bg)] text-[color:var(--warning-text)]"
-                        : "bg-[color:var(--surface-subtle)] text-[color:var(--text-muted)]"
-                  }`}
-                >
-                  <Users aria-hidden="true" className="size-3.5" />
-                  {unclaimed.state === "escalated"
-                    ? `Escalated (>${thresholdMinutes}m)`
-                    : unclaimed.state === "withinThreshold"
-                      ? "Pending coordinator"
-                      : "Assigned"}
-                </span>
-              </div>
-              <p className="mt-2 text-2xl font-bold text-[color:var(--text-heading)]">{unclaimed.plans}</p>
-            </div>
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[color:var(--border)] pt-3 text-xs text-[color:var(--text-muted)]">
-              <span>
-                {unclaimed.oldestMinutesUnclaimed !== null
-                  ? `Oldest waiting ${formatMinutesDuration(unclaimed.oldestMinutesUnclaimed)}`
-                  : "No queue backlog"}
-              </span>
-              <Link
-                href={CARING_CONTACTS_ROUTES.team}
-                data-internal-link="true"
-                className="inline-flex min-h-tap shrink-0 items-center gap-1 font-medium text-[color:var(--command)] hover:underline"
-              >
-                Team roster <ArrowRight aria-hidden="true" className="size-3" />
-              </Link>
-            </div>
-          </div>
+          <TriageCard
+            label="Unclaimed cases"
+            value={unclaimed.plans}
+            badge={{
+              tone:
+                unclaimed.state === "escalated"
+                  ? "danger"
+                  : unclaimed.state === "withinThreshold"
+                    ? "warning"
+                    : "neutral",
+              icon: Users,
+              text:
+                unclaimed.state === "escalated"
+                  ? `Escalated (>${thresholdMinutes}m)`
+                  : unclaimed.state === "withinThreshold"
+                    ? "Pending coordinator"
+                    : "Assigned",
+            }}
+            footnote={
+              unclaimed.oldestMinutesUnclaimed !== null
+                ? `Oldest waiting ${formatMinutesDuration(unclaimed.oldestMinutesUnclaimed)}`
+                : "No queue backlog"
+            }
+            link={{ href: CARING_CONTACTS_ROUTES.team, label: "Team roster" }}
+          />
 
-          {/* Card: Service Safety State */}
-          <div className={`${workspacePanelPadded} flex flex-col justify-between`}>
-            <div>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-medium text-[color:var(--text-muted)]">Safety state</span>
-                <span
-                  className={`${badgeClass} ${
-                    serviceState.stopped
-                      ? "bg-[color:var(--danger-bg)] text-[color:var(--danger-text)]"
-                      : "bg-[color:var(--success-bg)] text-[color:var(--success-text)]"
-                  }`}
-                >
-                  {serviceState.stopped ? (
-                    <ShieldAlert aria-hidden="true" className="size-3.5" />
-                  ) : (
-                    <CheckCircle2 aria-hidden="true" className="size-3.5" />
-                  )}
-                  {serviceState.stopped ? "Stopped" : "Active"}
-                </span>
-              </div>
-              <p className="mt-2 text-lg font-semibold text-[color:var(--text-heading)]">
-                {serviceState.stopped ? "STOPPED" : "Operational"}
-              </p>
-            </div>
-            <div className="mt-4 border-t border-[color:var(--border)] pt-3 text-xs text-[color:var(--text-muted)]">
-              <span>
-                {serviceState.stopped
-                  ? "All dispatches held by emergency stop"
-                  : counts.held > 0
-                    ? `${counts.held} contacts held by plan`
-                    : "Dispatches running"}
-              </span>
-            </div>
-          </div>
+          {/*
+            The safety card links to the service stop screen whatever the state: while sending runs
+            it is where a stop is raised, and once stopped it is where the restart approvals are.
+            On a phone this is the nearest route to that control, which otherwise sits in More.
+          */}
+          <TriageCard
+            label="Safety state"
+            value={serviceState.stopped ? "Stopped" : "Operational"}
+            badge={{
+              tone: serviceState.stopped ? "danger" : "success",
+              icon: serviceState.stopped ? ShieldAlert : CheckCircle2,
+              text: serviceState.stopped ? "Stopped" : "Active",
+            }}
+            footnote={
+              serviceState.stopped
+                ? "All dispatches held by emergency stop"
+                : counts.held > 0
+                  ? `${counts.held} contacts held by plan`
+                  : "Dispatches running"
+            }
+            link={{ href: CARING_CONTACTS_ROUTES.serviceStop, label: "Service stop" }}
+          />
         </div>
       </section>
 
       {/* Incoming text messages (2026-09-26): patients' replies waiting for a person. */}
       {repliesToCheck !== null ? <RepliesToCheck replies={repliesToCheck} /> : null}
 
-      {/* 2. Action Queue & Operational Review */}
+      {/* 2. Action queue. */}
       <section aria-labelledby="action-queue-heading" data-testid="caring-contacts-action-queue" className="space-y-4">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <h2 id="action-queue-heading" className="text-base font-semibold text-[color:var(--text-heading)]">
@@ -305,100 +235,49 @@ export function TodayDashboard({
             No contacts require intervention or delivery today. Routine schedules are up to date.
           </div>
         ) : (
+          /*
+            A list rather than a sideways-scrolling table. On a phone the table hid its Action
+            column off-screen, so the one control each row exists for was the thing a reader could
+            not see. Each row is a card on a phone and lines up under the column labels from `md`.
+          */
           <div className={`${workspacePanel} overflow-hidden`}>
             <div
-              className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[color:var(--focus)]"
-              tabIndex={0}
-              role="region"
-              aria-label="Clinical action queue, scrolls sideways"
+              aria-hidden="true"
+              className="hidden border-b border-[color:var(--border)] bg-[color:var(--surface-subtle)] px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[color:var(--text-muted)] md:grid md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_auto] md:gap-4"
             >
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-[color:var(--border)] bg-[color:var(--surface-subtle)] text-xs font-semibold text-[color:var(--text-muted)] uppercase tracking-wider">
-                  <tr>
-                    <th scope="col" className="px-4 py-3">
-                      Patient ref
-                    </th>
-                    <th scope="col" className="px-4 py-3">
-                      Contact
-                    </th>
-                    <th scope="col" className="px-4 py-3">
-                      Message
-                    </th>
-                    <th scope="col" className="px-4 py-3">
-                      State
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-right">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[color:var(--border)] bg-[color:var(--surface)]">
-                  {/* Urgent exceptions first */}
-                  {exceptions.entries.map((entry) => (
-                    <tr key={entry.contactId} className="hover:bg-[color:var(--surface-subtle)]/50">
-                      <td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-medium text-[color:var(--text-heading)]">
-                        {entry.patientId}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-[color:var(--text)]">
-                        {entry.cadenceLabel}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-xs text-[color:var(--text-muted)]">
-                        {MESSAGE_TYPE_LABELS[entry.messageType]}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3">
-                        <span className={`${badgeClass} bg-[color:var(--warning-bg)] text-[color:var(--warning-text)]`}>
-                          <AlertCircle aria-hidden="true" className="size-3" />
-                          {CONTACT_STATE_LABELS[entry.state]}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <Link
-                          href={patientPlanRoute(entry.patientId, entry.planId)}
-                          data-internal-link="true"
-                          className="inline-flex min-h-tap items-center gap-1 whitespace-nowrap text-xs font-medium text-[color:var(--command)] hover:underline"
-                        >
-                          Review patient <ArrowRight aria-hidden="true" className="size-3" />
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-
-                  {/* Due routine contacts */}
-                  {dueEntries.map((entry) => (
-                    <tr key={entry.contactId} className="hover:bg-[color:var(--surface-subtle)]/50">
-                      <td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-medium text-[color:var(--text-heading)]">
-                        {entry.patientId}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-[color:var(--text)]">
-                        {entry.cadenceLabel}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-xs text-[color:var(--text-muted)]">
-                        {MESSAGE_TYPE_LABELS[entry.messageType]}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3">
-                        <span
-                          className={`${badgeClass} bg-[color:var(--clinical-accent-soft)] text-[color:var(--clinical-accent)]`}
-                        >
-                          <Clock aria-hidden="true" className="size-3" />
-                          {outsideWindowDueIds.has(entry.contactId)
-                            ? "Due outside approved window"
-                            : "Due for dispatch"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <Link
-                          href={patientPlanRoute(entry.patientId, entry.planId)}
-                          data-internal-link="true"
-                          className="inline-flex min-h-tap items-center gap-1 whitespace-nowrap text-xs font-medium text-[color:var(--command)] hover:underline"
-                        >
-                          View plan <ArrowRight aria-hidden="true" className="size-3" />
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <span>Patient ref</span>
+              <span>Contact</span>
+              <span>Message</span>
+              <span>State</span>
+              <span className="text-right">Action</span>
             </div>
+            <ul
+              aria-label="Contacts to act on"
+              className="divide-y divide-[color:var(--border)] bg-[color:var(--surface)]"
+            >
+              {/* Urgent exceptions first */}
+              {exceptions.entries.map((entry) => (
+                <ActionQueueRow
+                  key={entry.contactId}
+                  entry={entry}
+                  badge={{ tone: "warning", icon: AlertCircle, text: CONTACT_STATE_LABELS[entry.state] }}
+                  linkLabel="Review patient"
+                />
+              ))}
+              {/* Due routine contacts */}
+              {dueEntries.map((entry) => (
+                <ActionQueueRow
+                  key={entry.contactId}
+                  entry={entry}
+                  badge={{
+                    tone: "accent",
+                    icon: Clock,
+                    text: outsideWindowDueIds.has(entry.contactId) ? "Due outside approved window" : "Due for dispatch",
+                  }}
+                  linkLabel="View plan"
+                />
+              ))}
+            </ul>
           </div>
         )}
       </section>
@@ -416,38 +295,38 @@ export function TodayDashboard({
           <Link
             href={CARING_CONTACTS_ROUTES.team}
             data-internal-link="true"
-            className="inline-flex items-center gap-1 text-xs font-medium text-[color:var(--command)] hover:underline"
+            className="inline-flex min-h-tap items-center gap-1 text-xs font-medium text-[color:var(--command)] hover:underline"
           >
-            Full workload roster <ArrowRight aria-hidden="true" className="size-3" />
+            Full workload roster <ArrowRight aria-hidden="true" className="size-icon-xs" />
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div className={`${workspacePanelPadded} flex items-center gap-4`}>
-            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[color:var(--surface-subtle)] text-[color:var(--text-muted)]">
-              <UserCheck aria-hidden="true" className="size-5" />
+        <div className="grid grid-cols-3 gap-3 sm:gap-4">
+          <div className={`${workspacePanelPadded} flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-4`}>
+            <span className="hidden size-10 shrink-0 place-items-center rounded-full bg-[color:var(--surface-subtle)] text-[color:var(--text-muted)] sm:grid">
+              <UserCheck aria-hidden="true" className="size-icon-lg" />
             </span>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs font-medium text-[color:var(--text-muted)]">Active coordinators</p>
               <p className="text-xl font-bold text-[color:var(--text-heading)]">{coordinators.length}</p>
             </div>
           </div>
 
-          <div className={`${workspacePanelPadded} flex items-center gap-4`}>
-            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[color:var(--surface-subtle)] text-[color:var(--text-muted)]">
-              <Users aria-hidden="true" className="size-5" />
+          <div className={`${workspacePanelPadded} flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-4`}>
+            <span className="hidden size-10 shrink-0 place-items-center rounded-full bg-[color:var(--surface-subtle)] text-[color:var(--text-muted)] sm:grid">
+              <Users aria-hidden="true" className="size-icon-lg" />
             </span>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs font-medium text-[color:var(--text-muted)]">Active patient caseload</p>
               <p className="text-xl font-bold text-[color:var(--text-heading)]">{totalActivePlans}</p>
             </div>
           </div>
 
-          <div className={`${workspacePanelPadded} flex items-center gap-4`}>
-            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[color:var(--surface-subtle)] text-[color:var(--text-muted)]">
-              <AlertTriangle aria-hidden="true" className="size-5" />
+          <div className={`${workspacePanelPadded} flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-4`}>
+            <span className="hidden size-10 shrink-0 place-items-center rounded-full bg-[color:var(--surface-subtle)] text-[color:var(--text-muted)] sm:grid">
+              <AlertTriangle aria-hidden="true" className="size-icon-lg" />
             </span>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs font-medium text-[color:var(--text-muted)]">Held / safety pauses</p>
               <p className="text-xl font-bold text-[color:var(--text-heading)]">{totalHeldPlans}</p>
             </div>
@@ -507,22 +386,106 @@ export function TodayDashboard({
           </div>
         )}
       </section>
-
-      {/* Quick entry links. "New plan" is not repeated here (the header carries it); only the empty-state card offers it again as its next step. */}
-      <section aria-label="Workspace shortcuts" className="flex flex-wrap items-center gap-3 pt-2">
-        <Link href={CARING_CONTACTS_ROUTES.patients} data-internal-link="true" className={floatingControl}>
-          <Users aria-hidden="true" className="size-icon-sm shrink-0" />
-          <span>Patients</span>
-        </Link>
-        <Link href={CARING_CONTACTS_ROUTES.schedule} data-internal-link="true" className={floatingControl}>
-          <Calendar aria-hidden="true" className="size-icon-sm shrink-0" />
-          <span>Schedule</span>
-        </Link>
-        <Link href={CARING_CONTACTS_ROUTES.intake} data-internal-link="true" className={floatingControl}>
-          <FilePlus aria-hidden="true" className="size-icon-sm shrink-0" />
-          <span>Referral intake</span>
-        </Link>
-      </section>
     </div>
+  );
+}
+
+type BadgeTone = "accent" | "warning" | "danger" | "success" | "neutral";
+
+const BADGE_TONES: Readonly<Record<BadgeTone, string>> = {
+  accent: "bg-[color:var(--clinical-accent-soft)] text-[color:var(--clinical-accent)]",
+  warning: "bg-[color:var(--warning-bg)] text-[color:var(--warning-text)]",
+  danger: "bg-[color:var(--danger-bg)] text-[color:var(--danger-text)]",
+  success: "bg-[color:var(--success-bg)] text-[color:var(--success-text)]",
+  neutral: "bg-[color:var(--surface-subtle)] text-[color:var(--text-muted)]",
+};
+
+type Badge = { tone: BadgeTone; icon: LucideIcon; text: string };
+
+function StatusBadge({ badge }: { badge: Badge }) {
+  const Icon = badge.icon;
+  return (
+    <span className={`${badgeClass} ${BADGE_TONES[badge.tone]}`}>
+      <Icon aria-hidden="true" className="size-icon-sm shrink-0" />
+      {badge.text}
+    </span>
+  );
+}
+
+const cardLinkClass =
+  "inline-flex min-h-tap shrink-0 items-center gap-1 font-medium text-[color:var(--command)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--focus)]";
+
+/**
+ * One triage card. The label, the figure and the badge sit in a fixed order and the footer is
+ * pushed to the bottom, so four cards side by side keep their figures and footers on one line even
+ * when one badge is longer than the others (the unclaimed card's used to wrap under its label and
+ * push its figure down a row).
+ */
+function TriageCard({
+  label,
+  value,
+  badge,
+  footnote,
+  link,
+}: {
+  label: string;
+  value: number | string;
+  badge: Badge;
+  footnote: string;
+  link: { href: string; label: string } | null;
+}) {
+  return (
+    <div className={`${workspacePanelPadded} flex min-w-0 flex-col`}>
+      <span className="text-xs font-medium text-[color:var(--text-muted)]">{label}</span>
+      <p
+        className={`mt-1 font-bold text-[color:var(--text-heading)] ${
+          typeof value === "number" ? "text-2xl" : "text-xl"
+        }`}
+      >
+        {value}
+      </p>
+      <div className="mb-4 mt-2">
+        <StatusBadge badge={badge} />
+      </div>
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[color:var(--border)] pt-3 text-xs text-[color:var(--text-muted)]">
+        <span className="min-w-0">{footnote}</span>
+        {link === null ? null : (
+          <Link href={link.href} data-internal-link="true" className={cardLinkClass}>
+            {link.label} <ArrowRight aria-hidden="true" className="size-icon-xs" />
+          </Link>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** One contact in the action queue: a card on a phone, a row under the column labels from `md`. */
+function ActionQueueRow({ entry, badge, linkLabel }: { entry: ScheduleEntry; badge: Badge; linkLabel: string }) {
+  return (
+    <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-3 hover:bg-[color:var(--surface-subtle)]/50 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_auto]">
+      <span className="min-w-0 break-all font-mono text-xs font-medium text-[color:var(--text-heading)]">
+        {entry.patientId}
+      </span>
+      <span className="text-sm text-[color:var(--text)] max-md:col-start-1 max-md:row-start-2">
+        {entry.cadenceLabel}
+        <span className="text-xs text-[color:var(--text-muted)] md:hidden">
+          {" "}
+          · {MESSAGE_TYPE_LABELS[entry.messageType]}
+        </span>
+      </span>
+      <span className="hidden text-xs text-[color:var(--text-muted)] md:block">
+        {MESSAGE_TYPE_LABELS[entry.messageType]}
+      </span>
+      <span className="min-w-0 max-md:col-start-1 max-md:row-start-3">
+        <StatusBadge badge={badge} />
+      </span>
+      <Link
+        href={patientPlanRoute(entry.patientId, entry.planId)}
+        data-internal-link="true"
+        className={`${cardLinkClass} justify-end whitespace-nowrap text-xs max-md:col-start-2 max-md:row-span-3 max-md:row-start-1`}
+      >
+        {linkLabel} <ArrowRight aria-hidden="true" className="size-icon-xs" />
+      </Link>
+    </li>
   );
 }

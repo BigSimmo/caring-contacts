@@ -171,7 +171,7 @@ export default async function CaringContactsTeamPage() {
   return (
     <CaringContactsShell
       title="Team"
-      description="Where this team's caring-contact work is sitting: what each coordinator is carrying, and what nobody has claimed yet. Every patient, number and message in this workspace is invented; nothing here is ever sent to a real number."
+      description="Where this team's caring-contact work is sitting: what each coordinator is carrying, and what nobody has claimed yet."
       serviceState={serviceState}
     >
       <TeamRoster

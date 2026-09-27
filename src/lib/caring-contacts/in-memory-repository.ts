@@ -1510,7 +1510,8 @@ export function createInMemoryRepository(clock: Clock, options: RepositoryOption
         .filter((event) => (to === null ? true : new Date(event.timestamp).getTime() <= to))
         .filter((event) => (input.actorId === undefined ? true : event.actorId === input.actorId))
         .filter((event) => (input.objectType === undefined ? true : event.objectType === input.objectType));
-      return filtered.slice(input.offset, input.offset + input.limit);
+      const ordered = input.newestFirst === true ? filtered.reverse() : filtered;
+      return ordered.slice(input.offset, input.offset + input.limit);
     },
 
     // ---------------------------------------------------------------------

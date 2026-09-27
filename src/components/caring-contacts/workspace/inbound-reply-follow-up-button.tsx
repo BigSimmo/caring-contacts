@@ -16,6 +16,8 @@ import { useState } from "react";
 
 import { floatingControl } from "@/components/ui-primitives";
 
+import { mintIdempotencyKeyLetters } from "./plan-action-rules";
+
 export const INBOUND_REPLY_FOLLOW_UP_REFUSAL_WORDING: Readonly<Record<string, string>> = Object.freeze({
   "inbound-reply-already-followed-up": "Someone has already marked this reply followed up.",
   "stale-version": "This reply changed after the page was opened. The page has been refreshed.",
@@ -30,13 +32,13 @@ function followUpEndpoint(replyId: string): string {
   return `/api/caring-contacts/inbound-replies/${encodeURIComponent(replyId)}`;
 }
 
+/**
+ * Letters only, like every other write key in this workspace. A raw UUID -- or the `Date.now()`
+ * fallback on an origin without `crypto.randomUUID` -- can hold a run of digits that the audit
+ * guard reads as a possible mobile number and refuses (see `mintIdempotencyKeyLetters`).
+ */
 function mintKey(): string {
-  const random =
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  // The audit trail's id grammar: letters, digits, `_`, `:` and `-` only.
-  return `REPLY-FOLLOW-UP-${random.replace(/[^A-Za-z0-9-]/g, "")}`;
+  return `REPLY-FOLLOW-UP-${mintIdempotencyKeyLetters()}`;
 }
 
 export type InboundReplyFollowUpButtonProps = {

@@ -201,7 +201,7 @@ export default async function CaringContactsPatientOverviewPage({
   return (
     <CaringContactsShell
       title="Patient"
-      description="One patient's caring-contact episode: who they are, which plan is running, what has happened on it, and what is still to come. Every patient, number and message in this workspace is invented; nothing here is ever sent to a real number."
+      description="One patient's caring-contact episode: who they are, which plan is running, what has happened on it, and what is still to come."
       serviceState={serviceState}
     >
       <PatientOverview patientId={patientId} view={view} />

@@ -92,6 +92,7 @@ function rolesHolding(action: CaringContactAction): readonly CaringContactRole[]
 }
 
 export type AccessTrailListProps = {
+  /** The window's entries, newest first, exactly as the page read them (`newestFirst: true`). */
   entries: readonly AuditEvent[];
   mayViewAccessTrail: boolean;
   windowDays: number;
@@ -121,9 +122,6 @@ export function AccessTrailList({ entries, mayViewAccessTrail, windowDays, limit
     );
   }
 
-  // The trail comes back oldest first; the most recent access is the one a reviewer usually wants.
-  const newestFirst = [...entries].reverse();
-
   return (
     <section aria-labelledby="access-trail-heading" className={workspacePanelPadded}>
       <h2 id="access-trail-heading" className="text-base font-semibold text-[color:var(--text-heading)]">
@@ -131,11 +129,11 @@ export function AccessTrailList({ entries, mayViewAccessTrail, windowDays, limit
       </h2>
       <p className="mt-1 max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]">
         {entries.length === limit
-          ? `The window holds at least ${limit} entries; this screen shows the earliest ${limit} of them, newest of those first. Reading this screen is itself recorded here.`
+          ? `The window holds at least ${limit} entries; this screen shows the most recent ${limit}, newest first. Reading this screen is itself recorded here.`
           : `${entries.length} ${entries.length === 1 ? "entry" : "entries"}. Reading this screen is itself recorded here.`}
       </p>
       <ol className="mt-3 flex min-w-0 flex-col gap-2" data-testid="caring-contacts-access-trail">
-        {newestFirst.map((event) => (
+        {entries.map((event) => (
           <li
             key={`${event.idempotencyKey}-${event.timestamp}`}
             data-testid="caring-contacts-access-trail-entry"
