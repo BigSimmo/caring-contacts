@@ -1,5 +1,6 @@
 import { CalendarClock, ClipboardCheck, EyeOff } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { CARING_CONTACTS_ROUTES, patientPlanRoute } from "@/lib/caring-contacts-routes";
 import { planAssuranceWording, type PlanAssuranceAttestation } from "@/lib/caring-contacts/assurances";
@@ -292,18 +293,18 @@ function RecordAChangeCard({
     return null;
   }
   return (
-    <section className={cardClass}>
+    <div className={cardClass}>
       <RecordAChange context={updates} detail={detail} />
-    </section>
+    </div>
   );
 }
 
 function MobileCheckCard({ updates }: { updates: PatientUpdatesContext }) {
   if (!offeredUpdates(updates, updates.planState).mobileCheck) return null;
   return (
-    <section className={cardClass}>
+    <div className={cardClass}>
       <MobileCheckPanel context={updates} />
-    </section>
+    </div>
   );
 }
 
@@ -320,6 +321,22 @@ function BackToPatients() {
 }
 
 const cardClass = workspacePanelPadded;
+
+/**
+ * Label-and-value rows, one definition list per card. The label column is fixed from `sm` so the
+ * values line up down the card; on a phone each label sits above its value. The label keeps its
+ * trailing colon and space so the row still reads as one sentence to a screen reader and in tests.
+ */
+const fieldListClass = "grid min-w-0 gap-y-2 text-sm leading-6";
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid min-w-0 gap-x-4 sm:grid-cols-[10rem_minmax(0,1fr)]">
+      <dt className="font-medium text-[color:var(--text)]">{label}: </dt>
+      <dd className="min-w-0 break-words text-[color:var(--text-muted)]">{children}</dd>
+    </div>
+  );
+}
 
 const rowLinkClass =
   "flex min-h-tap min-w-0 flex-col justify-center rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface)] px-4 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--focus)] forced-colors:border-[CanvasText]";
@@ -433,21 +450,29 @@ function EpisodeOverview({
 
   return (
     <div className="flex min-w-0 flex-col gap-5">
-      <section aria-labelledby="caring-contacts-patient-heading" className={cardClass}>
-        <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)]">
-          {name === null ? "Synthetic patient identifier" : "Patient"}
-        </p>
-        <h2
-          id="caring-contacts-patient-heading"
-          className="mt-0.5 break-words text-sm font-semibold text-[color:var(--text-heading)]"
-        >
-          {name ?? patientId}
-        </h2>
-        {name === null ? null : (
-          <p className="mt-0.5 break-words text-xs text-[color:var(--text-muted)]">Synthetic identifier: {patientId}</p>
-        )}
+      {/*
+        Who the patient is and which plan this is, side by side from 1280px so a desktop reader sees
+        both without scrolling; stacked below that. DOM order is unchanged, so the reading order is
+        the same at every width.
+      */}
+      <div className="grid min-w-0 gap-5 xl:grid-cols-2 xl:items-start">
+        <section aria-labelledby="caring-contacts-patient-heading" className={cardClass}>
+          <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)]">
+            {name === null ? "Synthetic patient identifier" : "Patient"}
+          </p>
+          <h2
+            id="caring-contacts-patient-heading"
+            className="mt-0.5 break-words text-lg font-semibold text-[color:var(--text-heading)]"
+          >
+            {name ?? patientId}
+          </h2>
+          {name === null ? null : (
+            <p className="mt-0.5 break-words text-xs text-[color:var(--text-muted)]">
+              Synthetic identifier: {patientId}
+            </p>
+          )}
 
-        {/*
+          {/*
           Beside the name, not in a detail row below: the number is shown deliberately, so it sits
           where identity lives. Text, never a `tel:` link -- see the module note.
 
@@ -456,28 +481,53 @@ function EpisodeOverview({
           that a reader would have to interpret. `episode === null` is the role case and prints
           nothing at all here; the notice below says why.
         */}
-        {episode === null ? null : (
-          <p className="mt-1 text-sm leading-6 text-[color:var(--text-muted)]">
-            <span className="font-medium text-[color:var(--text)]">Mobile number: </span>
-            {episode.patientMobileNumber === "" ? (
-              "no number held for this episode"
-            ) : (
-              <>
-                {episode.patientMobileNumber}{" "}
-                <span className="text-xs">&mdash; invented, and nothing in this workspace is ever sent to it</span>
-              </>
-            )}
-          </p>
-        )}
+          {episode === null ? null : (
+            <dl className={`mt-3 ${fieldListClass}`}>
+              <Field label="Mobile number">
+                {episode.patientMobileNumber === "" ? (
+                  "no number held for this episode"
+                ) : (
+                  <>
+                    {episode.patientMobileNumber}{" "}
+                    <span className="text-xs">&mdash; invented, and nothing in this workspace is ever sent to it</span>
+                  </>
+                )}
+              </Field>
+              {/*
+              THE NAME THE MESSAGES OPEN WITH, AND ITS THREE STATES KEPT APART.
 
-        {episode === null ? (
-          <div className="mt-3 min-w-0">
-            <EpisodeNotPermittedNotice />
-          </div>
-        ) : null}
-        {episode !== null && episode.patientName === "" ? (
-          <div className="mt-3 min-w-0">
-            {/*
+              A cleared episode and one that never held a preferred name are different facts and must
+              not read as the same one. `""` is the retention clearance's own value
+              (`CLEARED_PATIENT_DETAIL.preferredName`), exactly as a blank name and a blank number are;
+              `null` is an episode that predates the field, or one whose caller supplied none. Each gets
+              its own sentence, and NEITHER names a cause the record cannot support -- "removed when this
+              episode was de-identified" is an act this record does hold, and "none is held" says only
+              what is true now rather than guessing why (see `Episode.preferredName`).
+            */}
+              <Field label="Called this in messages">
+                {episode.preferredName === null
+                  ? "none is held for this episode"
+                  : episode.preferredName === ""
+                    ? "removed when this episode was de-identified"
+                    : episode.preferredName}
+              </Field>
+              {episode.patientIdentifiers.length > 0 ? (
+                <Field label="Other identifiers">{episode.patientIdentifiers.join(", ")}</Field>
+              ) : null}
+              {episode.culturalIdentity !== null ? (
+                <Field label="Cultural identity">{episode.culturalIdentity}</Field>
+              ) : null}
+            </dl>
+          )}
+
+          {episode === null ? (
+            <div className="mt-3 min-w-0">
+              <EpisodeNotPermittedNotice />
+            </div>
+          ) : null}
+          {episode !== null && episode.patientName === "" ? (
+            <div className="mt-3 min-w-0">
+              {/*
               THE ABSENCE IS OBSERVED HERE; THE CAUSE IS NOT INFERRED FROM IT (#J7PZQP).
               "No name is held" is a true reading of a blank name. "A retention clearance emptied
               it" is a separate claim, and this screen used to derive the second from the first --
@@ -485,139 +535,89 @@ function EpisodeOverview({
               on the way in. The episode now carries the clearance instant, so the notice is told
               whether one was recorded rather than deducing it.
             */}
-            <NoNameHeldNotice
-              patientDetailClearedAt={episode.patientDetailClearedAt}
-              mobileNumberHeld={episode.patientMobileNumber !== ""}
-            />
-          </div>
-        ) : null}
+              <NoNameHeldNotice
+                patientDetailClearedAt={episode.patientDetailClearedAt}
+                mobileNumberHeld={episode.patientMobileNumber !== ""}
+              />
+            </div>
+          ) : null}
 
-        {/*
+          {/*
           THE WITHDRAWAL REASON (owner-approved 2026-09-26). Optional, so its absence is stated as
           "no reason is held" and never given a cause: none may have been given, or a clearance may
           have removed it with the rest of the patient detail. It is a clinician's own words about
           this patient, so it is shown verbatim and only here, on the episode read.
         */}
-        {episode !== null && record.plan.state === "withdrawn" ? (
-          <p
-            className="mt-1 max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]"
-            data-testid="caring-contacts-withdrawal-reason"
-          >
-            <span className="font-medium text-[color:var(--text)]">Withdrawal reason: </span>
-            {episode.withdrawalReason === null ? (
-              "no reason is held for this withdrawal."
-            ) : (
-              <>&ldquo;{episode.withdrawalReason}&rdquo;</>
-            )}
-          </p>
-        ) : null}
+          {episode !== null && record.plan.state === "withdrawn" ? (
+            <p
+              className="mt-3 max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]"
+              data-testid="caring-contacts-withdrawal-reason"
+            >
+              <span className="font-medium text-[color:var(--text)]">Withdrawal reason: </span>
+              {episode.withdrawalReason === null ? (
+                "no reason is held for this withdrawal."
+              ) : (
+                <>&ldquo;{episode.withdrawalReason}&rdquo;</>
+              )}
+            </p>
+          ) : null}
 
-        {/*
-          THE NAME THE MESSAGES OPEN WITH, AND ITS THREE STATES KEPT APART.
+          <p className="mt-3 max-w-[var(--measure)] text-xs leading-5 text-[color:var(--text-muted)]">
+            This patient is invented, and so is every identifier and number held against them.
+          </p>
+        </section>
 
-          A cleared episode and one that never held a preferred name are different facts and must
-          not read as the same one. `""` is the retention clearance's own value
-          (`CLEARED_PATIENT_DETAIL.preferredName`), exactly as a blank name and a blank number are;
-          `null` is an episode that predates the field, or one whose caller supplied none. Each gets
-          its own sentence, and NEITHER names a cause the record cannot support -- "removed when this
-          episode was de-identified" is an act this record does hold, and "none is held" says only
-          what is true now rather than guessing why (see `Episode.preferredName`).
-        */}
-        {episode === null ? null : (
-          <p className="mt-2 text-sm leading-6 text-[color:var(--text-muted)]">
-            <span className="font-medium text-[color:var(--text)]">Called this in messages: </span>
-            {episode.preferredName === null
-              ? "none is held for this episode"
-              : episode.preferredName === ""
-                ? "removed when this episode was de-identified"
-                : episode.preferredName}
-          </p>
-        )}
-
-        {episode !== null && episode.patientIdentifiers.length > 0 ? (
-          <p className="mt-2 text-sm leading-6 text-[color:var(--text-muted)]">
-            <span className="font-medium text-[color:var(--text)]">Other identifiers: </span>
-            {episode.patientIdentifiers.join(", ")}
-          </p>
-        ) : null}
-        {episode !== null && episode.culturalIdentity !== null ? (
-          <p className="text-sm leading-6 text-[color:var(--text-muted)]">
-            <span className="font-medium text-[color:var(--text)]">Cultural identity: </span>
-            {episode.culturalIdentity}
-          </p>
-        ) : null}
-        <p className="mt-2 max-w-[var(--measure)] text-xs leading-5 text-[color:var(--text-muted)]">
-          This patient is invented, and so is every identifier and number held against them.
-        </p>
-      </section>
-
-      {/* Incoming text messages (2026-09-26): the patient's replies, above the plan they act on. */}
-      {inboundReplies !== null ? <PatientReplies replies={inboundReplies} mayFollowUp={mayFollowUpReplies} /> : null}
-
-      <section aria-labelledby="caring-contacts-plan-heading" className={cardClass}>
-        <h2 id="caring-contacts-plan-heading" className="text-base font-semibold text-[color:var(--text-heading)]">
-          This plan
-        </h2>
-        <div data-testid="caring-contacts-plan-summary" className="mt-2 min-w-0">
-          <p className="text-sm leading-6 text-[color:var(--text-muted)]">
-            <span className="font-medium text-[color:var(--text)]">Plan: </span>
-            {record.plan.id}
-          </p>
-          <p className="text-sm leading-6 text-[color:var(--text-muted)]">
-            <span className="font-medium text-[color:var(--text)]">Plan state: </span>
-            {PLAN_STATE_LABELS[record.plan.state]}
-          </p>
-          <p className="text-sm leading-6 text-[color:var(--text-muted)]">
-            <span className="font-medium text-[color:var(--text)]">Outcome: </span>
-            {PLAN_OUTCOME_LABELS[record.outcome]}
-          </p>
-          {/*
+        <section aria-labelledby="caring-contacts-plan-heading" className={cardClass}>
+          <h2 id="caring-contacts-plan-heading" className="text-base font-semibold text-[color:var(--text-heading)]">
+            This plan
+          </h2>
+          <dl data-testid="caring-contacts-plan-summary" className={`mt-3 min-w-0 ${fieldListClass}`}>
+            <Field label="Plan">{record.plan.id}</Field>
+            <Field label="Plan state">{PLAN_STATE_LABELS[record.plan.state]}</Field>
+            <Field label="Outcome">{PLAN_OUTCOME_LABELS[record.outcome]}</Field>
+            {/*
             Every date in the schedule hangs off the AWST discharge DAY, never off UTC and never
             off the first contact, so this is the anchor a clinician checks the rest against.
           */}
-          <p className="text-sm leading-6 text-[color:var(--text-muted)]">
-            <span className="font-medium text-[color:var(--text)]">Discharged: </span>
-            {awstCalendarDay(record.dischargeAt)} (AWST)
-          </p>
-          <p className="text-sm leading-6 text-[color:var(--text-muted)]">
-            <span className="font-medium text-[color:var(--text)]">Ended: </span>
-            {record.completedAt === null
-              ? "not yet — this episode is still open"
-              : `${awstCalendarDay(record.completedAt)} (AWST)`}
-          </p>
-          <p className="text-sm leading-6 text-[color:var(--text-muted)]">
-            <span className="font-medium text-[color:var(--text)]">Pathway version: </span>
-            {record.pathwayVersionId}
-          </p>
-          {episode === null ? null : (
-            <p className="text-sm leading-6 text-[color:var(--text-muted)]">
-              <span className="font-medium text-[color:var(--text)]">Transport so far: </span>
-              {plural(episode.counts.contactsSent, "message sent", "messages sent")}, of which{" "}
-              {plural(episode.counts.contactsDelivered, "carries a delivery receipt", "carry a delivery receipt")}.
+            <Field label="Discharged">{awstCalendarDay(record.dischargeAt)} (AWST)</Field>
+            <Field label="Ended">
+              {record.completedAt === null
+                ? "not yet — this episode is still open"
+                : `${awstCalendarDay(record.completedAt)} (AWST)`}
+            </Field>
+            <Field label="Pathway version">{record.pathwayVersionId}</Field>
+            {episode === null ? null : (
+              <Field label="Transport so far">
+                {plural(episode.counts.contactsSent, "message sent", "messages sent")}, of which{" "}
+                {plural(episode.counts.contactsDelivered, "carries a delivery receipt", "carry a delivery receipt")}.
+              </Field>
+            )}
+          </dl>
+
+          {otherPlanCount > 0 ? (
+            <p className="mt-3 max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]">
+              This team holds {plural(otherPlanCount, "other plan", "other plans")} for this patient.{" "}
+              <Link
+                href={CARING_CONTACTS_ROUTES.patients}
+                data-internal-link="true"
+                className="underline decoration-[color:var(--border-strong)] underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--focus)]"
+              >
+                This team&rsquo;s plans
+              </Link>{" "}
+              lists them.
             </p>
+          ) : null}
+
+          {firstContact === undefined ? null : (
+            <div data-testid="caring-contacts-first-contact" className="mt-3 min-w-0">
+              <FirstContact record={record} episode={episode} firstContact={firstContact} />
+            </div>
           )}
-        </div>
+        </section>
+      </div>
 
-        {otherPlanCount > 0 ? (
-          <p className="mt-3 max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]">
-            This team holds {plural(otherPlanCount, "other plan", "other plans")} for this patient.{" "}
-            <Link
-              href={CARING_CONTACTS_ROUTES.patients}
-              data-internal-link="true"
-              className="underline decoration-[color:var(--border-strong)] underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--focus)]"
-            >
-              This team&rsquo;s plans
-            </Link>{" "}
-            lists them.
-          </p>
-        ) : null}
-
-        {firstContact === undefined ? null : (
-          <div data-testid="caring-contacts-first-contact" className="mt-3 min-w-0">
-            <FirstContact record={record} episode={episode} firstContact={firstContact} />
-          </div>
-        )}
-      </section>
+      {/* Incoming text messages (2026-09-26): the patient's replies, directly under the plan they act on. */}
+      {inboundReplies !== null ? <PatientReplies replies={inboundReplies} mayFollowUp={mayFollowUpReplies} /> : null}
 
       <PlanAssurances attestations={record.assuranceAttestations} planState={record.plan.state} />
 
@@ -626,33 +626,39 @@ function EpisodeOverview({
         The card is this screen's; what each control does, and what it refuses, is decided in
         `plan-action-rules.ts` from what the domain does.
       */}
-      <section className={cardClass}>
-        <PlanActions context={actions} />
-      </section>
-
       {/*
+        The actions sit two-up from 1280px: the plan's own actions on the left, and what has happened
+        to the patient plus the number check on the right. Stacked in the same order below that.
+      */}
+      <div className="grid min-w-0 gap-5 xl:grid-cols-2 xl:items-start">
+        <div className={cardClass}>
+          <PlanActions context={actions} />
+        </div>
+
+        {/*
         What has happened to the patient since discharge, and the test text to their number. Both
         write, so both live in client components beside the plan actions; each renders nothing when
         the role or the plan's state leaves it nothing the service would accept. The contact detail
         edits need the episode read, because nobody should change a number they cannot see.
       */}
-      {updates === undefined ? null : (
-        <>
-          <RecordAChangeCard
-            updates={updates}
-            detail={
-              episode === null
-                ? null
-                : {
-                    patientName: episode.patientName,
-                    preferredName: episode.preferredName,
-                    patientMobileNumber: episode.patientMobileNumber,
-                  }
-            }
-          />
-          <MobileCheckCard updates={updates} />
-        </>
-      )}
+        {updates === undefined ? null : (
+          <div className="flex min-w-0 flex-col gap-5">
+            <RecordAChangeCard
+              updates={updates}
+              detail={
+                episode === null
+                  ? null
+                  : {
+                      patientName: episode.patientName,
+                      preferredName: episode.preferredName,
+                      patientMobileNumber: episode.patientMobileNumber,
+                    }
+              }
+            />
+            <MobileCheckCard updates={updates} />
+          </div>
+        )}
+      </div>
 
       <section aria-labelledby="caring-contacts-schedule-heading" className={cardClass}>
         <div className="min-w-0">
@@ -690,7 +696,7 @@ function EpisodeOverview({
           </div>
         )}
 
-        <ul aria-label="Twelve-month schedule" className="mt-4 flex min-w-0 flex-col gap-3">
+        <ul aria-label="Twelve-month schedule" className="mt-4 grid min-w-0 gap-3 lg:grid-cols-2">
           {entries.map((entry) => (
             <ScheduleEntry key={entry.contact.id} entry={entry} plan={record} />
           ))}

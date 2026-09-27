@@ -400,7 +400,7 @@ export function CaringContactsShell({
           </span>
         </div>
 
-        <nav aria-label="Workspace" className="mt-3 flex flex-1 flex-col gap-1 px-3">
+        <nav aria-label="Workspace" className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 py-3">
           {PRIMARY_DESTINATIONS.map(({ id, label, href, icon: Icon, reason }) =>
             href ? (
               <WorkspaceNavLink key={id} href={href} className={`${railItemClass} ${railItemCurrent} ${focusRing}`}>
@@ -445,14 +445,18 @@ export function CaringContactsShell({
           data-synthetic-marker-host
           className="sticky top-0 z-[var(--z-raised)] border-b border-[color:var(--border)] bg-[color:var(--surface-chrome)] px-4 sm:px-6 lg:px-8 forced-colors:bg-[Canvas]"
         >
-          <div className="flex min-h-[var(--header-h)] flex-wrap items-center justify-between gap-2 py-2">
-            <div className="flex min-w-0 items-center gap-3 md:hidden">
+          <div className="flex min-h-[var(--header-h)] items-center justify-between gap-3 py-2">
+            <div className="flex shrink-0 items-center gap-3 md:hidden">
               <span className="grid size-9 shrink-0 place-items-center rounded-[var(--radius-md)] bg-[color:var(--clinical-accent)] text-[color:var(--clinical-accent-contrast)] forced-colors:border forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText]">
                 <HeartHandshake aria-hidden="true" className="size-icon-lg" />
               </span>
-              <span className="truncate text-sm font-semibold text-[color:var(--text-heading)]">Caring Contacts</span>
+              <span className="whitespace-nowrap text-sm font-semibold text-[color:var(--text-heading)]">
+                Caring Contacts
+              </span>
             </div>
-            <SyntheticMarker className="ml-auto" />
+            {/* One row at every width: on a narrow phone the marker's words wrap inside it rather than
+                pushing the whole marker onto a second header row. */}
+            <SyntheticMarker className="ml-auto min-w-0 text-balance text-center" />
           </div>
 
           {/*
@@ -598,8 +602,14 @@ export function CaringContactsShell({
                     <MorePanelDestination id={`more-overflow-${id}`} label={label} href={href} reason={reason} />
                   </li>
                 ))}
+                {/*
+                    A BUILT destination is hidden from 768px up, because the rail lists every one of
+                    them at those widths and a second copy of the same links under every screen was
+                    a 4-row tail of duplicates. The unbuilt entries stay at every width: the rail
+                    does not carry them, and this panel is the only place that states their reason.
+                */}
                 {MORE_DESTINATIONS.map(({ id, label, href, reason }) => (
-                  <li key={id} className="min-w-0">
+                  <li key={id} className={href ? "min-w-0 md:hidden" : "min-w-0"}>
                     <MorePanelDestination id={`more-${id}`} label={label} href={href} reason={reason} />
                   </li>
                 ))}
