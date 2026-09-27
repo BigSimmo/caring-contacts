@@ -88,5 +88,4 @@ items that matter most before any real patient.
 - Screens still say "no carrier is connected"; reword once real sending is live.
 - The "Preview the message" dialog opened from Templates offers only "Back to personalisation"
   (its wording is fixed by the interaction-matrix document).
-- The design prototypes still say "Pause future contacts" where the app says "Hold".
 - Staff roles change only at next sign-in (up to 8 hours); there is no way to end a session early.

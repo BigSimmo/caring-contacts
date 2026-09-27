@@ -31,7 +31,7 @@ import {
   RecordAChange,
   type PatientUpdateDetail,
 } from "@/components/caring-contacts/workspace/patient-updates/record-a-change";
-import { PlanActions } from "@/components/caring-contacts/workspace/plan-actions";
+import { PlanActions, PlanSyncProvider } from "@/components/caring-contacts/workspace/plan-actions";
 import type { PlanActionsContext } from "@/components/caring-contacts/workspace/plan-action-rules";
 import { CARING_CONTACT_ROLE_WORDING } from "@/lib/caring-contacts/permissions";
 import type { PlanState } from "@/lib/caring-contacts/model";
@@ -488,5 +488,83 @@ describe("where Resume is offered", () => {
     await waitFor(() => expect(outcome).toHaveTextContent("The patient's number has not been confirmed yet"));
     expect(outcome).toHaveTextContent("Check the number");
     expect(outcome).not.toHaveTextContent("has not been taught");
+  });
+});
+
+describe("the panels on one patient page share the plan's version and its writes in flight", () => {
+  const CHECK_SENT = {
+    status: 200,
+    body: {
+      value: {
+        record: recordAnswer("active", 4, {
+          state: "awaitingConfirmation",
+          sentAt: "2026-09-26T02:00:00.000Z",
+          resolvedAt: null,
+        }),
+      },
+    },
+  };
+
+  async function renameTo(user: ReturnType<typeof userEvent.setup>, preferred: string) {
+    const name = screen.getByLabelText("Preferred name (optional)");
+    await user.clear(name);
+    await user.type(name, preferred);
+    await user.click(screen.getByRole("button", { name: "Save the name" }));
+  }
+
+  it("sends the version another panel's write was answered with, so the change is not refused as stale", async () => {
+    const user = userEvent.setup();
+    const fetched = mockFetch({
+      [CHECK_URL]: [CHECK_SENT],
+      [PLAN_URL]: [
+        { status: 200, body: { value: { record: recordAnswer("active", 5), mobileChanged: false, exceptions: [] } } },
+      ],
+    });
+    render(
+      <PlanSyncProvider>
+        <RecordAChange context={context()} detail={DETAIL} />
+        <MobileCheckPanel context={context()} />
+      </PlanSyncProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Send a test text" }));
+    await waitFor(() => expect(fetched.to(CHECK_URL)).toHaveLength(1));
+    await waitFor(() =>
+      expect(screen.getByTestId("caring-contacts-mobile-check-state")).toHaveTextContent(
+        "Waiting for the patient to confirm",
+      ),
+    );
+
+    // The props still say version 3: the refresh the write asked for has not landed.
+    await renameTo(user, "Ro");
+    await waitFor(() => expect(fetched.to(PLAN_URL)).toHaveLength(1));
+    expect(fetched.to(PLAN_URL)[0].body).toMatchObject({ action: "updateContactDetail", expectedVersion: 4 });
+  });
+
+  it("refuses a change while another panel's write to the same plan is still on its way", async () => {
+    const user = userEvent.setup();
+    const sent: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      sent.push(String(input));
+      // The test text never answers, so its write stays in flight for the rest of the case.
+      return new Promise<Response>(() => {});
+    });
+    render(
+      <PlanSyncProvider>
+        <RecordAChange context={context()} detail={DETAIL} />
+        <MobileCheckPanel context={context()} />
+      </PlanSyncProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Send a test text" }));
+    await waitFor(() => expect(sent).toEqual([CHECK_URL]));
+
+    await renameTo(user, "Ro");
+    await waitFor(() =>
+      expect(screen.getByTestId("caring-contacts-record-a-change")).toHaveTextContent(
+        "Another change to this plan is still on its way to the service",
+      ),
+    );
+    expect(sent).toEqual([CHECK_URL]);
   });
 });

@@ -192,12 +192,12 @@ export const completionOverlayDefinitions = [
   },
   {
     id: "pause",
-    label: "Pause",
-    title: "Pause caring-contact plan",
-    summary: "Pause is reversible but never rebases the original calendar.",
+    label: "Hold",
+    title: "Hold this plan",
+    summary: "Holding keeps the whole schedule and can be undone. No message is removed and no date moves.",
     content:
-      "Contacts inside the pause are permanently skipped. Resumption begins with the next future scheduled contact.",
-    decision: "Pause future contacts",
+      "Nothing is sent while the plan is held, and a message whose time passes during the hold is not sent later. Letting the plan run again starts with the next message still to come.",
+    decision: "Hold this plan",
     availability: "Available",
     mutatesState: true,
     phoneModality: "bottom-sheet",
@@ -493,12 +493,12 @@ export function ContextualOverlay({
     baseDefinition?.id === "pause" && resumeMode
       ? {
           ...baseDefinition,
-          label: "Resume",
-          title: "Resume caring-contact plan",
-          summary: "Resume with the next future contact while preserving the original calendar.",
+          label: "Let run again",
+          title: "Let this plan run again",
+          summary: "The plan runs again from the next message still to come, on its original calendar.",
           content:
-            "Contacts skipped during the pause remain skipped. No catch-up or cadence rebase occurs; the next future contact stays at its original AWST time.",
-          decision: "Resume with original calendar",
+            "Messages whose time passed during the hold stay unsent. Nothing is caught up and no date moves; the next message still to come keeps its original AWST time.",
+          decision: "Let this plan run again",
           tone: "primary" as const,
         }
       : baseDefinition;

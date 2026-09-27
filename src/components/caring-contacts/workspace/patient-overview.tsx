@@ -1,34 +1,40 @@
-import { CalendarClock, ClipboardCheck, EyeOff } from "lucide-react";
+import { ClipboardCheck } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
 
-import { CARING_CONTACTS_ROUTES, patientPlanRoute } from "@/lib/caring-contacts-routes";
-import { planAssuranceWording, type PlanAssuranceAttestation } from "@/lib/caring-contacts/assurances";
+import { CARING_CONTACTS_ROUTES } from "@/lib/caring-contacts-routes";
+import { type PlanAssuranceAttestation, planAssuranceWording } from "@/lib/caring-contacts/assurances";
 import { awstCalendarDay } from "@/lib/caring-contacts/clock";
 import type { Episode } from "@/lib/caring-contacts/episode";
 import type { InboundReplyWithText } from "@/lib/caring-contacts/inbound-replies";
 import { contactSendability, type PlanState } from "@/lib/caring-contacts/model";
 import {
-  summariseStoredContacts,
   type PatientNameProjection,
-  type PlanOutcome,
   type PlanRecord,
   type StoredContact,
-  type StoredContactSummary,
+  summariseStoredContacts,
 } from "@/lib/caring-contacts/repository";
 
 import { AutomatedState } from "./automated-state";
 import { CONTACT_STATE_LABELS, MESSAGE_TYPE_LABELS } from "./contact-vocabulary";
-import { ListEmptyState } from "./list-empty-state";
+import { plural } from "./count-wording";
 import { PatientReplies } from "./inbound-replies";
+import { ListEmptyState } from "./list-empty-state";
 import { ExitOnlyOverlayTrigger } from "./overlays/exit-only-overlay-trigger";
-import type { PlanActionsContext } from "./plan-action-rules";
-import { PlanActions } from "./plan-actions";
+import { FirstContact } from "./patient-overview-parts/first-contact";
+import { Field, fieldListClass, PLAN_OUTCOME_LABELS, PLAN_STATE_LABELS } from "./patient-overview-parts/labels";
+import { EpisodeNotPermittedNotice, NoNameHeldNotice } from "./patient-overview-parts/notices";
+import { BackToPatients, PlanChooser } from "./patient-overview-parts/plan-chooser";
+import {
+  notSentExplanation,
+  planNotRunningNote,
+  scheduleSummarySentence,
+} from "./patient-overview-parts/schedule-wording";
 import { MobileCheckPanel } from "./patient-updates/mobile-check-panel";
 import { offeredUpdates, type PatientUpdatesContext } from "./patient-updates/patient-update-rules";
 import { RecordAChange } from "./patient-updates/record-a-change";
+import type { PlanActionsContext } from "./plan-action-rules";
+import { PlanActions, PlanSyncProvider } from "./plan-actions";
 import { workspacePanelPadded } from "./surfaces";
-import { plural } from "./count-wording";
 
 /**
  * One patient's caring-contact episode -- who they are, which plan is running, what has happened
@@ -162,26 +168,6 @@ import { plural } from "./count-wording";
  * mutating rows and the resume that pause owes.
  */
 
-const PLAN_STATE_LABELS: Readonly<Record<PlanState, string>> = Object.freeze({
-  draft: "Draft",
-  active: "Active",
-  paused: "Paused",
-  withdrawn: "Withdrawn",
-  cancelled: "Cancelled",
-  completed: "Completed",
-});
-
-const PLAN_OUTCOME_LABELS: Readonly<Record<PlanOutcome, string>> = Object.freeze({
-  inProgress: "In progress",
-  withdrawn: "Withdrawn",
-  cancelled: "Cancelled",
-  completed: "Completed",
-});
-
-/** The programme's usual first contact: the day after discharge. */
-const DEFAULT_FIRST_CONTACT_OFFSET_DAYS = 1;
-const MILLISECONDS_PER_DAY = 86_400_000;
-
 export type PatientOverviewView =
   | { kind: "no-plan" }
   | { kind: "not-permitted" }
@@ -309,115 +295,7 @@ function MobileCheckCard({ updates }: { updates: PatientUpdatesContext }) {
   );
 }
 
-function BackToPatients() {
-  return (
-    <Link
-      href={CARING_CONTACTS_ROUTES.patients}
-      data-internal-link="true"
-      className="inline-flex min-h-tap items-center justify-center rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface-subtle)] px-4 text-sm font-semibold text-[color:var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--focus)] forced-colors:border-[CanvasText]"
-    >
-      Back to this team&rsquo;s plans
-    </Link>
-  );
-}
-
 const cardClass = workspacePanelPadded;
-
-/**
- * Label-and-value rows, one definition list per card. The label column is fixed from `sm` so the
- * values line up down the card; on a phone each label sits above its value. The label keeps its
- * trailing colon and space so the row still reads as one sentence to a screen reader and in tests.
- */
-const fieldListClass = "grid min-w-0 gap-y-2 text-sm leading-6";
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="grid min-w-0 gap-x-4 sm:grid-cols-[10rem_minmax(0,1fr)]">
-      <dt className="font-medium text-[color:var(--text)]">{label}: </dt>
-      <dd className="min-w-0 break-words text-[color:var(--text-muted)]">{children}</dd>
-    </div>
-  );
-}
-
-const rowLinkClass =
-  "flex min-h-tap min-w-0 flex-col justify-center rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface)] px-4 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--focus)] forced-colors:border-[CanvasText]";
-
-/**
- * More than one plan, and nothing in the URL naming one.
- *
- * The name comes from `listPatientNames` (Ruling 91), never from `getEpisode`: choosing between
- * two plans needs a name to recognise the person by and nothing else, and `getEpisode` would
- * release four identifying fields to answer a question about which plan to open. It is also
- * keyed by PLAN, and that matters here more than anywhere else in the workspace -- a retention
- * clearance is recorded per plan, so one of this patient's two plans can hold a name while the
- * other does not, and the chooser shows each row's own answer rather than one name for both.
- */
-function PlanChooser({
-  patientId,
-  plans,
-  patientNames,
-}: {
-  patientId: string;
-  plans: readonly PlanRecord[];
-  patientNames: readonly PatientNameProjection[];
-}) {
-  // A cleared plan's name is the empty string both stores write for a removed one, so it is
-  // dropped here rather than at each row: an empty name is "no name held", never a name.
-  const nameByPlan = new Map(
-    patientNames.filter((entry) => entry.patientName !== "").map((entry) => [entry.planId, entry.patientName]),
-  );
-  const anyName = plans.map((record) => nameByPlan.get(record.plan.id)).find((name) => name !== undefined) ?? null;
-
-  return (
-    <section aria-labelledby="caring-contacts-plan-chooser-heading" className="min-w-0">
-      <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)]">
-        {anyName === null ? "Synthetic patient identifier" : "Patient"}
-      </p>
-      <p className="mt-0.5 break-words text-sm font-semibold text-[color:var(--text-heading)]">
-        {anyName ?? patientId}
-      </p>
-      <h2
-        id="caring-contacts-plan-chooser-heading"
-        className="mt-4 text-base font-semibold text-[color:var(--text-heading)]"
-      >
-        This patient has more than one plan
-      </h2>
-      <p className="mt-2 max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]">
-        Choose which plan to open. This screen shows one plan at a time and will not choose for you: two plans for one
-        person can hold different things, because a retention clearance is recorded against a plan rather than against a
-        patient, and one plan&rsquo;s schedule shown under this patient&rsquo;s name without saying which plan it is
-        would be the worst mistake this screen could make.
-      </p>
-
-      <ul className="mt-4 flex min-w-0 flex-col gap-3">
-        {plans.map((record) => {
-          const name = nameByPlan.get(record.plan.id) ?? null;
-          return (
-            <li key={record.plan.id} className="min-w-0">
-              <Link
-                href={patientPlanRoute(patientId, record.plan.id)}
-                data-internal-link="true"
-                className={rowLinkClass}
-              >
-                <span className="truncate text-sm font-semibold text-[color:var(--text-heading)]">
-                  Plan {record.plan.id}
-                </span>
-                <span className="mt-0.5 truncate text-sm text-[color:var(--text-muted)]">
-                  {PLAN_STATE_LABELS[record.plan.state]} &middot; discharged {awstCalendarDay(record.dischargeAt)}{" "}
-                  (AWST) &middot; {name === null ? "no name held for this plan" : name}
-                </span>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-
-      <div className="mt-5">
-        <BackToPatients />
-      </div>
-    </section>
-  );
-}
 
 function EpisodeOverview({
   patientId,
@@ -631,35 +509,41 @@ function EpisodeOverview({
         The actions sit two-up from 1280px: the plan's own actions on the left, and what has happened
         to the patient plus the number check on the right. Stacked in the same order below that.
       */}
-      <div className="grid min-w-0 gap-5 xl:grid-cols-2 xl:items-start">
-        <div className={cardClass}>
-          <PlanActions context={actions} />
-        </div>
+      {/*
+        One provider around all three writing panels, so a write in any of them hands the others the
+        plan's new version and blocks them while it is in flight. See `plan-sync.ts`.
+      */}
+      <PlanSyncProvider>
+        <div className="grid min-w-0 gap-5 xl:grid-cols-2 xl:items-start">
+          <div className={cardClass}>
+            <PlanActions context={actions} />
+          </div>
 
-        {/*
+          {/*
         What has happened to the patient since discharge, and the test text to their number. Both
         write, so both live in client components beside the plan actions; each renders nothing when
         the role or the plan's state leaves it nothing the service would accept. The contact detail
         edits need the episode read, because nobody should change a number they cannot see.
       */}
-        {updates === undefined ? null : (
-          <div className="flex min-w-0 flex-col gap-5">
-            <RecordAChangeCard
-              updates={updates}
-              detail={
-                episode === null
-                  ? null
-                  : {
-                      patientName: episode.patientName,
-                      preferredName: episode.preferredName,
-                      patientMobileNumber: episode.patientMobileNumber,
-                    }
-              }
-            />
-            <MobileCheckCard updates={updates} />
-          </div>
-        )}
-      </div>
+          {updates === undefined ? null : (
+            <div className="flex min-w-0 flex-col gap-5">
+              <RecordAChangeCard
+                updates={updates}
+                detail={
+                  episode === null
+                    ? null
+                    : {
+                        patientName: episode.patientName,
+                        preferredName: episode.preferredName,
+                        patientMobileNumber: episode.patientMobileNumber,
+                      }
+                }
+              />
+              <MobileCheckCard updates={updates} />
+            </div>
+          )}
+        </div>
+      </PlanSyncProvider>
 
       <section aria-labelledby="caring-contacts-schedule-heading" className={cardClass}>
         <div className="min-w-0">
@@ -713,184 +597,6 @@ function EpisodeOverview({
         <BackToPatients />
       </div>
     </div>
-  );
-}
-
-/**
- * The first contact date, and — when it is not the programme's usual day — why it moved.
- *
- * Ruling 96 puts the CONTROL on the review-and-activation screen (Tasks 7-9) and the DISPLAY here.
- * Spec 4.4 makes the display a contract: wherever an earlier decision has moved something, the
- * surface stating it must also state why, in plain words, where the reader is looking. So the
- * reason is rendered IN PLACE beside the date — a reason reachable only by hovering has not been
- * stated.
- *
- * THE REASON COMES FROM THE EPISODE, WHICH IS WHY THIS TAKES ONE (Ruling 105)
- * ---------------------------------------------------------------------------
- * It is free text a clinician wrote about this patient, so it is held with the name, the mobile
- * number and the identifiers, and released by the one read that releases those. It is deliberately
- * NOT on `PlanRecord`: that is what the caseload renders for every patient in the team, and a
- * clinical note has no business being fetched for a list screen. `record` therefore cannot answer
- * this question and `episode` can, which is exactly the shape the placement was chosen for.
- *
- * FOUR CASES, AND THEY ARE DIFFERENT FACTS (Ruling 108)
- * ----------------------------------------------------
- * A moved date with nothing beside it has more than one cause, and this screen states which one it
- * is holding rather than picking the tidiest:
- *
- *   * the date is the usual day — no reason was ever required, so none is missing;
- *   * a reason is held — show it, verbatim, beside the date;
- *   * the episode was not released to this role — the plan is visible and the person is not, so the
- *     reason is not this screen's to show and its absence says nothing about whether one exists;
- *   * the episode was released and holds no reason — either a retention clearance removed it with
- *     the rest of the patient detail, which this screen can tell from the blank name exactly as
- *     `NoNameHeldNotice` does, or the plan predates the reason being kept at all.
- *
- * That last case is real and will persist: plans created before this field existed hold null
- * forever, and no placeholder was migrated into them. It is stated as the record's own history, not
- * as a coordinator having failed to give a reason — one WAS required and given, because
- * `buildApprovedSchedule` refuses any offset other than discharge + 1 without a non-blank one.
- * There was simply nowhere to keep it.
- */
-function FirstContact({
-  record,
-  episode,
-  firstContact,
-}: {
-  record: PlanRecord;
-  episode: Episode | null;
-  firstContact: StoredContact;
-}) {
-  const day = firstContact.planned.calendarDay;
-  const offset = calendarDaysBetween(awstCalendarDay(record.dischargeAt), day);
-
-  if (offset === DEFAULT_FIRST_CONTACT_OFFSET_DAYS) {
-    return (
-      <p className="text-sm leading-6 text-[color:var(--text-muted)]">
-        <span className="font-medium text-[color:var(--text)]">First contact: </span>
-        {day} (AWST) — the day after discharge, which is this programme&rsquo;s usual first contact.
-      </p>
-    );
-  }
-
-  const heading = "First contact moved from the usual day";
-  const moved = `This plan's first contact is ${day}, ${plural(offset, "day", "days")} after discharge rather than the usual one.`;
-
-  return (
-    <>
-      <p className="text-sm leading-6 text-[color:var(--text-muted)]">
-        <span className="font-medium text-[color:var(--text)]">First contact: </span>
-        {day} (AWST)
-      </p>
-      <div
-        role="note"
-        aria-label={heading}
-        className="mt-2 flex min-w-0 flex-col gap-1 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface-subtle)] px-3 py-2 forced-colors:border-[CanvasText]"
-      >
-        <p className="flex min-w-0 items-center gap-2 text-sm font-semibold text-[color:var(--text-heading)]">
-          <CalendarClock aria-hidden="true" className="size-icon-md shrink-0" />
-          <span className="min-w-0">{heading}</span>
-        </p>
-        <FirstContactReason moved={moved} episode={episode} />
-      </div>
-    </>
-  );
-}
-
-/**
- * The "Why" and "What changes it" pair inside the moved-first-contact note.
- *
- * Split out so each of the four cases is one branch returning one pair, rather than a nest of
- * conditionals inside the markup. The wording of each is the point of this component: they are four
- * different statements about what the record holds, and collapsing any two of them would make the
- * screen say something it does not know.
- */
-function FirstContactReason({ moved, episode }: { moved: string; episode: Episode | null }) {
-  const reason = episode === null ? null : episode.firstContactReason;
-
-  // A reason is held. It is a clinician's own words, so it is rendered verbatim and attributed,
-  // never paraphrased or summarised into the sentence around it.
-  if (reason !== null) {
-    return (
-      <>
-        <p className="max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]">
-          <span className="font-medium text-[color:var(--text)]">Why: </span>
-          {moved} The coordinator who created it gave this reason: &ldquo;{reason}&rdquo;
-        </p>
-        <p className="max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]">
-          <span className="font-medium text-[color:var(--text)]">What changes it: </span>
-          Nothing on this screen. The date and its reason are set when the plan is created, and the rest of the
-          twelve-month schedule hangs off the discharge day rather than off this date, so moving it moves this message
-          alone.
-        </p>
-      </>
-    );
-  }
-
-  // The role may list plans but may not read an episode, so the reason was never released to this
-  // screen. Its absence is a fact about the ACTOR and says nothing about what the plan holds --
-  // decided by the page from the actor, exactly as `EpisodeNotPermittedNotice` above is.
-  if (episode === null) {
-    return (
-      <>
-        <p className="max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]">
-          <span className="font-medium text-[color:var(--text)]">Why: </span>
-          {moved} A coordinator has to give a reason before a plan can be created with a moved first contact. That
-          reason is part of this patient&rsquo;s record, which is not visible in the role you are acting in, so this
-          screen is not showing it — that says nothing about whether one is held.
-        </p>
-        <p className="max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]">
-          <span className="font-medium text-[color:var(--text)]">What changes it: </span>
-          Nothing on this screen, and there is no control for it anywhere in this workspace yet. The role this
-          demonstration acts in is set outside the interface.
-        </p>
-      </>
-    );
-  }
-
-  // The episode WAS released, holds no reason, and CARRIES A RECORDED CLEARANCE (#J7PZQP).
-  //
-  // This used to read `episode.patientName === ""` and conclude the clearance from it. The comment
-  // here said "a blank name here can only be the clearance", which was not true of the domain: the
-  // column is `not null` with no CHECK, neither store's `createPlan` validates a non-blank name,
-  // and the whole guarantee was `z.string().min(1)` in the plans API route. A plan that reached the
-  // store with a blank name any other way made this screen tell a clinician that a reason was
-  // given, that a clearance removed it, and that the removal is irreversible -- three definite
-  // statements about a live record, from a sentinel that meant two things at once.
-  //
-  // The instant is now carried on the episode, so this is a read rather than a deduction.
-  if (episode.patientDetailClearedAt !== null) {
-    return (
-      <>
-        <p className="max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]">
-          <span className="font-medium text-[color:var(--text)]">Why: </span>
-          {moved} A coordinator has to give a reason before a plan can be created with a moved first contact, and one
-          was given for this plan. A retention clearance has since removed it, along with the name, the mobile number,
-          the identifiers and the cultural identity — the reason is a clinician&rsquo;s free text about this patient, so
-          it is removed with the rest of them.
-        </p>
-        <p className="max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]">
-          <span className="font-medium text-[color:var(--text)]">What changes it: </span>
-          Nothing, here or anywhere. A clearance is not reversible, and the date above is what the record still holds.
-        </p>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <p className="max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]">
-        <span className="font-medium text-[color:var(--text)]">Why: </span>
-        {moved} A coordinator has to give a reason before a plan can be created with a moved first contact, and one was
-        given for this plan. It is not held: this plan was created before reasons were kept with the plan, so there was
-        nowhere to put it. Nobody failed to give one.
-      </p>
-      <p className="max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]">
-        <span className="font-medium text-[color:var(--text)]">What changes it: </span>
-        Nothing, for this plan. Reasons given from now on are kept with the plan and shown here; an older plan cannot
-        gain one after the fact, and inventing a sentence to fill the gap would be worse than the gap.
-      </p>
-    </>
   );
 }
 
@@ -966,73 +672,6 @@ function ScheduleEntry({ entry, plan }: { entry: StoredContact; plan: PlanRecord
       ) : null}
     </li>
   );
-}
-
-/**
- * Whether the PLAN is running, said beside the summary of what its messages hold -- or null when
- * there is nothing that could be misread.
- *
- * THE DEFECT THIS EXISTS FOR, AND IT IS THE ONE THIS SCREEN MOST PLAUSIBLY REINTRODUCES. `pausePlan`
- * is a plain lifecycle transition: it moves the plan and touches no contact. So a paused plan's
- * messages are still `scheduled`, `contactSendability` still classifies them `stillToSend`, and
- * `scheduleSummarySentence` above still says "every one of them is still to be sent" -- a true
- * statement about the RECORD that reads as a promise about the future. A draft plan is the same
- * shape: created, dated, and not started.
- *
- * That is deliberately NOT fixed by re-deriving sendability here. The classification is correct and
- * belongs to ./model; what is missing is the second fact, which lives on `plan.state`, and stating
- * it is this screen's job. `withdrawPlan` and `recordHospitalStatusEvent` cancel every unsent
- * contact, so an ENDED plan explains itself row by row through `notSentExplanation` and needs
- * nothing here -- which is why the terminal branch below is guarded by `stillToSend` and says the
- * record disagrees with itself rather than inventing a cause.
- *
- * Nothing here claims what a dispatcher would do with a paused plan's contact. It says what the two
- * records hold and leaves the reader in no doubt that a date on this screen is not a message on its
- * way.
- *
- * An exhaustive switch, so a seventh plan state cannot default into silence.
- */
-function planNotRunningNote(
-  state: PlanState,
-  summary: StoredContactSummary,
-): { state: string; because: string; changedBy: string } | null {
-  if (summary.stillToSend === 0) return null;
-
-  const notOnItsWay = "so a date below is not a message on its way.";
-  switch (state) {
-    case "active":
-      return null;
-    case "draft":
-      return {
-        state: PLAN_STATE_LABELS.draft,
-        because: `The messages below are dated and still to be sent, and this plan has not been started. A plan that has not been started is not running, ${notOnItsWay}`,
-        changedBy:
-          "Starting the plan, which is the last step of the sign-up that created it. Nothing on this screen does it.",
-      };
-    case "paused":
-      return {
-        state: PLAN_STATE_LABELS.paused,
-        because: `The messages below are dated and still to be sent, and this plan is paused. A paused plan is not running, ${notOnItsWay}`,
-        changedBy:
-          "Letting the plan run again, which the plan actions on this screen offer to a role that is granted it.",
-      };
-    case "withdrawn":
-    case "cancelled":
-    case "completed":
-      // Unreachable through any store write today: every ending runs the unsent contacts through
-      // `{ type: "cancel" }`, so an ended plan holds nothing still to send. Written rather than
-      // omitted because the types permit the combination, and the honest thing to say about it is
-      // that the two records disagree -- not a cause invented to reconcile them.
-      return {
-        state: PLAN_STATE_LABELS[state],
-        because: `This plan has ended, and the messages below are still recorded as still to be sent. Those two facts disagree, ${notOnItsWay}`,
-        changedBy: "Nothing on this screen. A record that disagrees with itself is for the service to look at.",
-      };
-    default: {
-      const unhandled: never = state;
-      return unhandled;
-    }
-  }
 }
 
 /**
@@ -1164,210 +803,4 @@ function PlanAssurances({
       ) : null}
     </section>
   );
-}
-
-/**
- * The acting role may list plans but may not read an episode.
- *
- * Unreachable today and written anyway, on the same principle as `PatientsDirectory`'s names
- * notice: `permissions.ts` currently grants `generateClinicalRecordSummary` to exactly the roles
- * that hold `viewReferral`, so an actor who reached this screen with a plan in hand can always
- * read its episode. That is one grant edit away from being false, and a branch that cannot run
- * today is still read and still copied by the next screen. Nothing infers it from a missing
- * episode — the page decides it from the actor — so it cannot fire wrongly while it waits.
- */
-function EpisodeNotPermittedNotice() {
-  const heading = "This patient's record is not visible in this role";
-  return (
-    <div
-      role="note"
-      aria-label={heading}
-      className="flex min-w-0 flex-col gap-1 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface-subtle)] px-3 py-2 forced-colors:border-[CanvasText]"
-    >
-      <p className="flex min-w-0 items-center gap-2 text-sm font-semibold text-[color:var(--text-heading)]">
-        <EyeOff aria-hidden="true" className="size-icon-md shrink-0" />
-        <span className="min-w-0">{heading}</span>
-      </p>
-      <p className="max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]">
-        <span className="font-medium text-[color:var(--text)]">Why: </span>
-        Reading a patient&rsquo;s record is not part of the role you are acting in. The plan and its schedule are below;
-        who the plan is for is not, and this says nothing about what is held for them.
-      </p>
-      <p className="max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]">
-        <span className="font-medium text-[color:var(--text)]">What changes it: </span>
-        Nothing on this screen, and there is no control for it anywhere in this workspace yet. The role this
-        demonstration acts in is set outside the interface.
-      </p>
-    </div>
-  );
-}
-
-/**
- * A released episode holding no name.
- *
- * `CLEARED_PATIENT_DETAIL` is what both stores write once a retention clearance is recorded, and
- * an emptied field IS the cleared value. This screen can name the cause where the directory could
- * not: an actor who may not read an episode receives no episode at all, so the role is ruled out.
- *
- * BUT THE CLEARANCE IS NOW READ, NOT DEDUCED (#J7PZQP). Ruling the role out is not the same as
- * ruling the clearance in. `patient_name` is `not null` with no CHECK and neither store's
- * `createPlan` validates it, so the only thing that made a blank name mean "cleared" was
- * `z.string().min(1)` at the plans API route -- one schema, at one edge, guarding a sentence this
- * screen states as fact on a patient record. `patientDetailClearedAt` is that fact, carried. When
- * it is null the absence is still reported, because it is real; the cause simply is not named.
- *
- * THE MOBILE NUMBER IS READ TOO, FOR THE SAME REASON (review finding). The first version of this
- * fix still said "and no mobile number is held for it either" on BOTH branches. On the cleared
- * branch that is sound -- `markRetentionCleared` empties the name, the number, the identifiers and
- * the cultural identity in one transaction. On the not-cleared branch it is another unchecked
- * claim deduced from the blank name, which is the exact defect this whole change exists to close,
- * reintroduced inside the fix. `Episode.patientMobileNumber` is right there, so it is consulted.
- */
-function NoNameHeldNotice({
-  patientDetailClearedAt,
-  mobileNumberHeld,
-}: {
-  patientDetailClearedAt: Date | null;
-  mobileNumberHeld: boolean;
-}) {
-  const heading = "No name is held for this patient";
-  return (
-    <div
-      role="note"
-      aria-label={heading}
-      className="flex min-w-0 flex-col gap-1 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface-subtle)] px-3 py-2 forced-colors:border-[CanvasText]"
-    >
-      <p className="flex min-w-0 items-center gap-2 text-sm font-semibold text-[color:var(--text-heading)]">
-        <EyeOff aria-hidden="true" className="size-icon-md shrink-0" />
-        <span className="min-w-0">{heading}</span>
-      </p>
-      <p className="max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]">
-        <span className="font-medium text-[color:var(--text)]">Why: </span>
-        {patientDetailClearedAt === null ? (
-          <>
-            This episode holds no patient name, so the heading above is the synthetic identifier
-            {mobileNumberHeld
-              ? ", though a mobile number is still held for it"
-              : ", and no mobile number is held for it either"}
-            . No retention clearance is recorded against this episode, so this screen cannot say why the name is absent,
-            and will not guess.
-          </>
-        ) : (
-          <>
-            This episode holds no patient name, so the heading above is the synthetic identifier, and no mobile number
-            is held for it either. A retention clearance removed the name, the mobile number, the identifiers and the
-            cultural identity together after the episode ended.
-          </>
-        )}
-      </p>
-      <p className="max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]">
-        <span className="font-medium text-[color:var(--text)]">What changes it: </span>
-        {patientDetailClearedAt === null ? (
-          <>Nothing, here or anywhere. The plan and its schedule below are what the record still holds.</>
-        ) : (
-          <>
-            Nothing, here or anywhere. A clearance is not reversible, and the plan and its schedule below are what the
-            record still holds.
-          </>
-        )}
-      </p>
-    </div>
-  );
-}
-
-/**
- * What is true of this plan's schedule, said in plain words and never as a claim about the future
- * that the plan itself has already falsified.
- *
- * "Every one of them will be sent" was the first version, and a withdrawn plan made it false: the
- * sentence has to be derived from all three buckets, not from the absence of one of them. The
- * single-bucket wordings exist because "10 entries: 10 still to send." is arithmetic rather than a
- * sentence, and this is the line a clinician reads first.
- */
-function scheduleSummarySentence(summary: StoredContactSummary): string {
-  const entries = plural(summary.total, "entry", "entries");
-  if (summary.total === 0) return "This plan holds no schedule entries.";
-  if (summary.willNotBeSent === summary.total) return `${entries}, and none of them will be sent.`;
-  if (summary.stillToSend === summary.total) return `${entries}, and every one of them is still to be sent.`;
-  if (summary.alreadySent === summary.total) return `${entries}, and every one of them has been sent.`;
-
-  const parts: string[] = [];
-  if (summary.alreadySent > 0) parts.push(`${summary.alreadySent} already sent`);
-  if (summary.stillToSend > 0) parts.push(`${summary.stillToSend} still to send`);
-  if (summary.willNotBeSent > 0) parts.push(`${summary.willNotBeSent} that will not be sent`);
-  const last = parts.pop() as string;
-  return `${entries}: ${[...parts, `and ${last}`].join(", ")}.`;
-}
-
-/**
- * Why this message will not be sent, and what would change it — or null when it still will be.
- *
- * Every branch says only what this screen actually holds. A cancelled contact on an ENDED plan is
- * explained by the ending, which the record does carry; a cancelled contact on a plan still running
- * is not, and says so rather than inventing a cause. Neither claims a remedy that does not exist:
- * suppression by absorption is the one reversible case here, and it is the only one offered.
- */
-function notSentExplanation(entry: StoredContact, plan: PlanRecord): { because: string; changedBy: string } | null {
-  if (contactSendability(entry.contact.state) !== "willNotBeSent") return null;
-
-  // Only a plan still running has "messages that remain". An ended plan sends nothing further, and
-  // saying it continues would tell a coordinator the opposite of what the record holds.
-  const finalAndNeverResent = isTerminalOutcome(plan.outcome)
-    ? "Nothing here. This message is final and is never sent later, and this plan has ended, so it sends no further messages."
-    : "Nothing here. This message is final and is never sent later; the plan continues with the messages that remain.";
-
-  if (entry.contact.state === "suppressed") {
-    return entry.planned.suppressed?.reason === "absorbedByFirstContact"
-      ? {
-          because:
-            "This message falls on the same calendar day as this plan's first contact, and two caring contacts must never land on one day, so the schedule kept one of them.",
-          changedBy: isTerminalOutcome(plan.outcome)
-            ? "Nothing here. This plan has ended, so its first-contact date can no longer be changed and it sends no further messages."
-            : "Choosing a different first-contact date for this plan puts this message back into the schedule.",
-        }
-      : {
-          because: "The system marked this message suppressed, and this screen does not hold what caused that.",
-          changedBy: finalAndNeverResent,
-        };
-  }
-
-  if (entry.contact.state === "cancelled") {
-    return {
-      because: isTerminalOutcome(plan.outcome)
-        ? `This plan ended (${PLAN_OUTCOME_LABELS[plan.outcome].toLowerCase()}), and the system cancelled every message that had not already gone out.`
-        : // DEFENSIVE, and unreachable through any store write today (established in Task 6's
-          // review). Every `{ type: "cancel" }` in the domain travels with a plan transition to
-          // `cancelled` or `withdrawn`, and `applyDeathCorrection` deliberately leaves the plan
-          // cancelled when it undoes one — so a cancelled contact on a plan still in progress has
-          // no path that produces it. The branch stays because the alternative is asserting a
-          // combination the types permit, and this wording is what the screen should say if a
-          // future write ever creates one. Do not go hunting for the path: there isn't one.
-          "The system cancelled this message, and this screen does not hold what caused that.",
-      changedBy: finalAndNeverResent,
-    };
-  }
-
-  return {
-    because:
-      "The window for sending this message closed without the message going out, so the system recorded it as missed.",
-    changedBy: finalAndNeverResent,
-  };
-}
-
-/** Whether the plan has ended. `"inProgress"` is the one outcome that is not an ending. */
-function isTerminalOutcome(outcome: PlanOutcome): boolean {
-  return outcome !== "inProgress";
-}
-
-/**
- * Whole calendar days from `from` to `to`, both AWST `YYYY-MM-DD`.
- *
- * UTC midnight is used purely as a cursor and never leaves this function, which is the same
- * technique `schedule.ts` uses for the arithmetic that produced these strings in the first place.
- * This does not re-derive the schedule: the days themselves come from the module that owns them,
- * and this only measures the distance between two of them so the screen can say "seven days after
- * discharge" instead of making a clinician subtract.
- */
-function calendarDaysBetween(from: string, to: string): number {
-  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / MILLISECONDS_PER_DAY);
 }

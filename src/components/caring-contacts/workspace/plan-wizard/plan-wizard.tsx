@@ -13,83 +13,85 @@ import {
   UserRoundCheck,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
-import { floatingControl, primaryControl } from "@/components/ui-primitives";
+import { useDirtyStateGuard } from "@/components/ui/use-dirty-state-guard";
 import { CARING_CONTACTS_ROUTES, patientPlanRoute } from "@/lib/caring-contacts-routes";
-import type { ReferralIntakePayload } from "@/lib/caring-contacts/referral-intake";
 import { DraftConcurrencyError } from "@/lib/caring-contacts/draft-store";
 import type { SendingPreference } from "@/lib/caring-contacts/model";
+import type { ReferralIntakePayload } from "@/lib/caring-contacts/referral-intake";
 import {
-  firstContactDayBounds,
   FIRST_CONTACT_REASON_MAX_LENGTH,
+  firstContactDayBounds,
   type SendingPreferenceOption,
 } from "@/lib/caring-contacts/schedule";
 
 import { AutomatedState } from "../automated-state";
 import { awstDateWording } from "../date-wording";
 import { ListEmptyState } from "../list-empty-state";
-import { overlayDefinition } from "../overlays/definitions";
+import { MobileConfirmationFields, type MobileNumberCheck, useMobileNumberCheck } from "../mobile-number-check";
 import { ExitOnlyOverlayTrigger } from "../overlays/exit-only-overlay-trigger";
 import type { WorkspaceOverlayCommit } from "../overlays/overlay-commits";
 import { WorkspaceOverlayTrigger } from "../overlays/overlay-trigger";
-import { MobileConfirmationFields, useMobileNumberCheck, type MobileNumberCheck } from "../mobile-number-check";
-import { UnavailableDestination } from "../unavailable-destination";
-import { useDirtyStateGuard } from "@/components/ui/use-dirty-state-guard";
+import { carriedFromIntake, IntakeClinicalBanner, intakePatientName, seedDraftFromIntake } from "./intake-seed";
 import { wizardDecisionRefusal, type WizardDecisionState } from "./overlay-guards";
 import {
-  clearPlanDraft,
-  emptyPlanDraft,
-  isPlanDraftDirty,
-  planDraftServerSnapshot,
-  planDraftSnapshot,
-  planDraftIsHeld,
-  readPlanDraft,
-  subscribeToPlanDraft,
-  writePlanDraft,
-  type PlanDraft,
-  type PlanDraftAssurances,
-} from "./plan-draft";
+  createPlanPatientDetail,
+  mobileIsDesignatedFictional,
+  mobileNumberProblem,
+  parsePatientIdentifiers,
+  type PersonalisationField,
+  personalisationIssues,
+  type PlanPatientDetailDraft,
+} from "./patient-detail";
 import {
   activatePlanRequestBody,
   activationRefusalWording,
   createPlanRequestBody,
   dischargeDayBounds,
   everyAssuranceConfirmed,
-  unconfirmedAssuranceSentence,
-  planVersionFromCreateAnswer,
   firstContactConsequence,
   firstContactReasonIsRequired,
   mintPlanSubmissionIdentity,
-  planSchedulePreview,
-  plannedScheduleSentence,
-  PLANNED_MESSAGE_TYPE_LABELS,
-  submissionRefusalWording,
-  TRANSPORT_REFUSALS,
-  type SubmissionRefusalWording,
   type PlanActivationDraft,
+  PLANNED_MESSAGE_TYPE_LABELS,
+  plannedScheduleSentence,
+  planSchedulePreview,
   type PlanSchedulePreview,
   type PlanSubmissionIdentity,
+  planVersionFromCreateAnswer,
+  submissionRefusalWording,
+  TRANSPORT_REFUSALS,
+  unconfirmedAssuranceSentence,
 } from "./plan-activation";
 import {
-  createPlanPatientDetail,
-  mobileIsDesignatedFictional,
-  mobileNumberProblem,
-  parsePatientIdentifiers,
-  personalisationIssues,
-  type PersonalisationField,
-  type PlanPatientDetailDraft,
-} from "./patient-detail";
-import {
-  PLAN_WIZARD_STAGES,
-  PLAN_WIZARD_STAGE_DEFINITIONS,
-  nextPlanWizardStage,
-  planWizardStageImplementation,
-  previousPlanWizardStage,
-  type PlanWizardStage,
-} from "./stages";
-import { workspacePanelPadded } from "../surfaces";
+  clearPlanDraft,
+  emptyPlanDraft,
+  isPlanDraftDirty,
+  type PlanDraft,
+  type PlanDraftAssurances,
+  planDraftIsHeld,
+  planDraftServerSnapshot,
+  planDraftSnapshot,
+  readPlanDraft,
+  subscribeToPlanDraft,
+  writePlanDraft,
+} from "./plan-draft";
+import { type PlanWizardStage, planWizardStageImplementation, previousPlanWizardStage } from "./stages";
 import { StatedReason } from "./stated-reason";
+import { Stepper, UnbuiltStagePanel } from "./wizard-chrome";
+import { DateField, ForwardControl, RefusalStatement, SourcedFact, TextAreaField, TextField } from "./wizard-fields";
+import {
+  fieldClass,
+  headingClass,
+  mutedTextClass,
+  optionLabelClass,
+  optionRowClass,
+  panelClass,
+  primaryControlClass,
+  secondaryControlClass,
+} from "./wizard-styles";
+import { decisionRefusalHeading, identityFacts, refusalNameFrom } from "./wizard-wording";
 
 /**
  * Putting a discharged patient onto a caring-contact plan: agreement, pathway, personalisation,
@@ -244,47 +246,6 @@ export type PlanWizardProps = {
   intakePrefill?: ReferralIntakePayload | null;
 };
 
-const panelClass = workspacePanelPadded;
-
-/**
- * The wizard's decisive command, on the shared recipe rather than a local accent fill.
- *
- * It was a filled `--clinical-accent` control, which put TWO filled primaries in TWO colours into
- * one decision: pressing "Create and start this plan" opens an overlay whose own confirm is
- * `primaryControl`, i.e. filled `--command`. `ckb-v2-tokens.css` states the rule this broke —
- * one filled `--command` button per surface, and Clinical Sky is for navigation and selection,
- * which is already how `aria-[current]` is drawn on the filter chips and the schedule day strip.
- * Activating a plan is a decisive command, so Graphite is the right role for it and the overlay
- * behind it now agrees.
- *
- * `primaryControl` also brings `controlBase` with it, which supplies `min-h-tap`, the focus ring,
- * `forced-colors:border`, `active:translate-y-px` and `controlDisabled`. That last one is a
- * deliberate, visible change: a disabled label lands on `--disabled` rather than `--text-muted`,
- * because the design system encodes disabled (flatten the fill, drop the shadow, remove the press)
- * instead of dimming label and fill together with an opacity. The wizard's disabled states are
- * transient and use the native attribute, which WCAG's contrast criterion exempts.
- */
-const primaryControlClass = `${primaryControl} min-w-0`;
-
-const secondaryControlClass = `${floatingControl} min-w-0`;
-
-const optionRowClass =
-  "min-w-0 border-t border-[color:var(--border)] px-4 py-2 text-left first:border-t-0 focus-within:outline focus-within:outline-2 focus-within:outline-offset-[-0.125rem] focus-within:outline-[color:var(--focus)]";
-
-/**
- * `min-h-tap` sits on the LABEL, not on the row around it — round 1, finding I-2.
- *
- * A 48px `<div>` wrapping a 20px radio and a one-line label is 48px of layout and about 20px of
- * activation surface: on a phone the rest of the row is dead space that looks tappable. The label
- * is what a tap activates, so the label is what has to be 48px tall, exactly as the stage-1
- * confirmations already do it. `min-h-12` (48px) and never `min-h-11`: this repo's production tap
- * floor exceeds even the AAA-level 44px criterion, because 44px hit a sub-pixel rounding flake in
- * `ui-smoke`.
- */
-const optionLabelClass = "flex min-h-tap w-full min-w-0 cursor-pointer items-center gap-3";
-
-const mutedTextClass = "max-w-[var(--measure)] text-sm leading-6 text-[color:var(--text-muted)]";
-
 /**
  * The mobile field's caution region. One constant because three places name it: the region's own
  * `id`, the input's `aria-describedby`, and the test that proves the region exists before it has
@@ -302,16 +263,6 @@ const MOBILE_CAUTION_ID = "caring-contacts-patient-mobile-caution";
  * they are the approved copy, so the announcement lives here instead of being edited into them.
  */
 const SAVE_DRAFT_DESTINATION = "keeps this sign-up on this computer and takes you to this team's plans";
-
-/**
- * A text input or textarea. `min-h-tap` for the same reason every other control here carries it:
- * a production tap target is 48px, and never `min-h-11` — 44px hit a sub-pixel rounding flake in
- * `ui-smoke`, so this repo's floor exceeds even the AAA-level criterion deliberately.
- */
-const fieldClass =
-  "min-h-tap w-full min-w-0 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2 text-sm text-[color:var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--focus)] forced-colors:border-[CanvasText]";
-
-const headingClass = "text-sm font-semibold text-[color:var(--text-heading)]";
 
 /**
  * The plan collection, which is where the FIRST of this screen's two writes goes.
@@ -359,102 +310,6 @@ type PlanSubmissionState =
    */
   | { status: "created-not-started"; planId: string; refusal: string }
   | { status: "created"; planId: string };
-
-/** One fact, with where it came from. The source line is the whole point — see Ruling [112]. */
-function SourcedFact({
-  icon,
-  label,
-  value,
-  source,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  source: string;
-}) {
-  return (
-    <div className="flex min-w-0 items-start gap-3 border-t border-[color:var(--border)] py-3 first:border-t-0 first:pt-0">
-      <span className="mt-0.5 shrink-0 text-[color:var(--text-muted)]">{icon}</span>
-      <div className="min-w-0">
-        <p className="text-xs font-medium text-[color:var(--text-muted)]">{label}</p>
-        <p className="mt-0.5 break-words text-sm font-semibold text-[color:var(--text-heading)]">{value}</p>
-        <p className="mt-0.5 text-xs leading-5 text-[color:var(--text-muted)]">{source}</p>
-      </div>
-    </div>
-  );
-}
-
-function IntakeClinicalBanner({ intake }: { intake: ReferralIntakePayload }) {
-  return (
-    <section
-      aria-label="Stored intake clinical payload"
-      className={`${panelClass} mb-4 border-l-4 border-l-[color:var(--focus)] space-y-2`}
-    >
-      <h2 className="text-sm font-semibold text-[color:var(--text-heading)]">
-        Clinical intake loaded from the audited store
-      </h2>
-      <p className="text-xs leading-5 text-[color:var(--text-muted)]">
-        These fields were persisted with the referral at H-44 intake and round-tripped from the store for this plan.
-        Patient name, mobile number and identifier are prefilled into personalisation for you to check; review safety
-        alerts before activation.
-      </p>
-      <div className="text-xs space-y-1">
-        <p>
-          <span className="font-semibold text-[color:var(--text-muted)]">Facility / ward:</span>{" "}
-          <span className="text-[color:var(--text)]">
-            {intake.hospitalFacility} — {intake.admittingWard}
-          </span>
-        </p>
-        {intake.clinicalSummary ? (
-          <p>
-            <span className="font-semibold text-[color:var(--text-muted)]">Clinical summary:</span>{" "}
-            <span className="text-[color:var(--text)]">{intake.clinicalSummary}</span>
-          </p>
-        ) : null}
-        {intake.safetyAlerts.length > 0 ? (
-          <div>
-            <span className="font-semibold text-[color:var(--text-muted)]">Safety alerts:</span>
-            <ul className="mt-1 list-disc pl-5 text-[color:var(--text)]">
-              {intake.safetyAlerts.map((alert) => (
-                <li key={alert}>{alert}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </div>
-    </section>
-  );
-}
-
-/** The patient name intake recorded, as the wizard seeds it. Blank when there is no intake. */
-function intakePatientName(intake: ReferralIntakePayload | null): string {
-  return intake ? `${intake.givenName} ${intake.familyName}`.trim() : "";
-}
-
-/**
- * Whether `value` is still exactly what the referral intake recorded. Provenance text uses this so
- * it never says "entered by you" for a value carried over, nor "from intake" for one retyped.
- */
-function carriedFromIntake(value: string, intakeValue: string | undefined): boolean {
-  return intakeValue !== undefined && intakeValue.trim() !== "" && value.trim() === intakeValue.trim();
-}
-
-function seedDraftFromIntake(
-  draft: ReturnType<typeof emptyPlanDraft>,
-  intake: ReferralIntakePayload | null | undefined,
-): ReturnType<typeof emptyPlanDraft> {
-  if (!intake) return draft;
-  const patientName = intakePatientName(intake);
-  return {
-    ...draft,
-    patientDetail: {
-      ...draft.patientDetail,
-      patientName: draft.patientDetail.patientName || patientName,
-      patientMobileNumber: draft.patientDetail.patientMobileNumber || intake.mobileNumber,
-      patientIdentifiers: draft.patientDetail.patientIdentifiers || intake.patientIdentifier,
-    },
-  };
-}
 
 export function PlanWizard({
   referralId,
@@ -1012,25 +867,6 @@ export function PlanWizard({
 }
 
 /**
- * Which decision was refused, named from the frozen table rather than from a sentence written here.
- *
- * `overlayDefinition(...).label` is the row's own words, so a label edited in the matrix travels
- * here without anyone remembering to. An id no row carries throws, on the same policy
- * `WorkspaceOverlayTrigger` and `blockReasonWording` already follow: a refusal attributed to a
- * decision nobody can find is worse than an error page that says nothing was changed.
- */
-function decisionRefusalHeading(overlayId: string): string {
-  const definition = overlayDefinition(overlayId);
-  if (definition === null) {
-    throw new Error(
-      `No overlay is defined for the id "${overlayId}", so a refusal cannot be attributed to it. ` +
-        `The 24 rows are frozen in overlays/definitions.ts.`,
-    );
-  }
-  return `${definition.label} was not carried out`;
-}
-
-/**
  * Fails loudly when a stage claims to be built and has no body.
  *
  * The `never` default in `stageBody` catches a stage nobody handled. It cannot catch the opposite
@@ -1068,36 +904,6 @@ function readStorageState(): "held" | "refused" {
 
 function readServerStorageState(): "pending" {
   return "pending";
-}
-
-function Stepper({ active }: { active: PlanWizardStage }) {
-  return (
-    <nav aria-label="Sign-up stages">
-      <ol className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap">
-        {PLAN_WIZARD_STAGES.map((stage) => {
-          const definition = PLAN_WIZARD_STAGE_DEFINITIONS[stage];
-          const implementation = planWizardStageImplementation(stage);
-          const current = stage === active;
-          return (
-            <li
-              key={stage}
-              aria-current={current ? "step" : undefined}
-              className={`flex min-w-0 items-center gap-2 rounded-[var(--radius-md)] border px-3 py-2 text-sm ${
-                current
-                  ? "border-[color:var(--clinical-accent)] font-semibold text-[color:var(--text-heading)]"
-                  : "border-[color:var(--border)] text-[color:var(--text-muted)]"
-              } forced-colors:border-[CanvasText]`}
-            >
-              <span className="min-w-0 truncate">{definition.label}</span>
-              {implementation.kind === "not-built" ? (
-                <span className="shrink-0 text-xs text-[color:var(--text-muted)]">not built yet</span>
-              ) : null}
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
-  );
 }
 
 /**
@@ -1256,30 +1062,6 @@ function DraftNotice({
         </p>
       </div>
     </div>
-  );
-}
-
-/**
- * A stage this task did not build.
- *
- * Ruling 52: an unbuilt destination is an unavailable control with a stated reason, never a dead
- * end — so the way back is a real control, not a promise.
- */
-function UnbuiltStagePanel({ stage, reason, onBack }: { stage: PlanWizardStage; reason: string; onBack: () => void }) {
-  const definition = PLAN_WIZARD_STAGE_DEFINITIONS[stage];
-  return (
-    <section aria-label={definition.label} className={panelClass}>
-      <ListEmptyState
-        kind="no-data"
-        heading={`${definition.label} is not built yet`}
-        explanation={reason}
-        action={
-          <button type="button" onClick={onBack} className={secondaryControlClass}>
-            <span className="truncate">Back</span>
-          </button>
-        }
-      />
-    </section>
   );
 }
 
@@ -2051,247 +1833,6 @@ function PersonalisationStage({
   );
 }
 
-/**
- * One labelled single-line field, with its requirement stated beneath it.
- *
- * THE REQUIREMENT IS ALWAYS RENDERED, not revealed once the clinician has touched the field and
- * left it empty. It is written as a requirement rather than a rebuke ("a plan cannot be created
- * without one"), so it reads correctly before anything has been typed — and a "touched" flag would
- * mean a screen-reader user who tabs past the field learns nothing about why the forward control is
- * inert. `aria-invalid` follows the same fact, so the two can never disagree.
- */
-function TextField({
-  id,
-  label,
-  hint,
-  value,
-  requirement,
-  onChange,
-  inputMode,
-  autoComplete,
-  describedBy,
-}: {
-  id: string;
-  label: string;
-  /**
-   * Plain words about what this field is for, shown whether or not anything is missing.
-   *
-   * Distinct from `requirement`, which appears only while the field is incomplete: a hint that
-   * explains WHY a question is asked has to be readable at the moment the clinician is deciding
-   * what to type, not only after they have failed to. Both are named in `aria-describedby` when
-   * both are present.
-   */
-  hint?: string;
-  value: string;
-  /** Plain words: what this field is for and why it cannot be left empty. Null when optional. */
-  requirement: string | null;
-  onChange: (value: string) => void;
-  inputMode?: "tel";
-  autoComplete?: "off";
-  /**
-   * An extra element id to name in `aria-describedby`, for a statement that lives outside this
-   * component — today, the mobile field's caution region (round 1, I-2). Joined with the
-   * requirement rather than replacing it: a field can be both incomplete and cautioned.
-   */
-  describedBy?: string;
-}) {
-  const requirementId = `${id}-requirement`;
-  const hintId = `${id}-hint`;
-  const described = [
-    hint === undefined ? null : hintId,
-    requirement === null ? null : requirementId,
-    describedBy ?? null,
-  ].filter((entry): entry is string => entry !== null);
-  return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <label htmlFor={id} className="text-sm font-medium text-[color:var(--text-heading)]">
-        {label}
-      </label>
-      <input
-        type="text"
-        id={id}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        inputMode={inputMode}
-        autoComplete={autoComplete}
-        aria-invalid={requirement !== null}
-        aria-describedby={described.length === 0 ? undefined : described.join(" ")}
-        className={fieldClass}
-      />
-      {hint === undefined ? null : (
-        <p id={hintId} className={mutedTextClass}>
-          {hint}
-        </p>
-      )}
-      {requirement === null ? null : (
-        <p id={requirementId} className={mutedTextClass}>
-          {requirement}
-        </p>
-      )}
-    </div>
-  );
-}
-
-/** The same, for a value that is a list the clinician writes one line at a time. */
-function TextAreaField({
-  id,
-  label,
-  hint,
-  value,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  hint: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const hintId = `${id}-hint`;
-  return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <label htmlFor={id} className="text-sm font-medium text-[color:var(--text-heading)]">
-        {label}
-      </label>
-      <textarea
-        id={id}
-        rows={3}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        aria-describedby={hintId}
-        className={fieldClass}
-      />
-      <p id={hintId} className={mutedTextClass}>
-        {hint}
-      </p>
-    </div>
-  );
-}
-
-/**
- * The control that moves to the next stage, or states that the next stage is not built.
- *
- * THE EXTENSION POINT, and the reason it is one control rather than two. Task 8 flipped
- * `personalisation` to `built` in `stages.ts` and wrote its body; this control became a real
- * Continue with no edit here, because it asks the same table the stepper reads — the mechanism
- * worked exactly as intended, and Task 9 flips `review` the same way. A hand-written "coming soon"
- * button at each call site is the version of this that either task could have half-changed.
- *
- * `UnavailableDestination` carries `aria-disabled` plus an inert handler rather than the native
- * `disabled` attribute, because `disabled` removes the tab stop and the stated reason could then
- * never be reached by keyboard. `ready` is a different thing entirely — a control awaiting validity
- * is TRANSIENTLY inert, which is what native `disabled` is for — and the two are never combined.
- */
-function ForwardControl({
-  from,
-  ready,
-  onContinue,
-}: {
-  from: PlanWizardStage;
-  ready: boolean;
-  onContinue: () => void;
-}) {
-  const next = nextPlanWizardStage(from);
-  if (next === null) return null;
-  const definition = PLAN_WIZARD_STAGE_DEFINITIONS[next];
-  const implementation = planWizardStageImplementation(next);
-
-  if (implementation.kind === "not-built") {
-    return (
-      <UnavailableDestination
-        id={`plan-wizard-${next}`}
-        label={definition.label}
-        reason={implementation.reason}
-        className={secondaryControlClass}
-      />
-    );
-  }
-
-  return (
-    <button type="button" disabled={!ready} onClick={onContinue} className={primaryControlClass}>
-      <span className="truncate">Continue to {definition.label.toLowerCase()}</span>
-    </button>
-  );
-}
-
-/**
- * Stage 4 — the whole plan read back, and the control that creates it.
- *
- * THE ONLY STAGE THAT WRITES, AND THE FIRST SCREEN IN THIS WORKSPACE THAT CREATES ANYTHING.
- * Everything before it reads. That single fact is why most of this component is about failure
- * rather than success: each of Ruling [117]'s three orderings is SILENT when it is reversed, and
- * what a reversal costs is either a clinician's typing or a patient's mobile number left on a ward
- * machine after the tab looked finished.
- *
- * WHAT IT COLLECTS, AND WHY THOSE TWO CONTROLS ARE ADJACENT (Rulings [118] and [121]). The
- * discharge day is collected here because `createPlanSchema` requires `dischargeAt` and nothing in
- * this domain carries one — the fourth value in this wizard whose approved design shows it arriving
- * from a hospital record this system is not connected to. The first-contact day is defined ENTIRELY
- * relative to it, so the two sit together: a date control anchored on a day nobody has entered means
- * nothing, and the relationship has to be visible at the moment both are chosen.
- *
- * WHAT IT DERIVES (Ruling [119]). Every count comes from the schedule the domain builds for the
- * dates on screen. The mockup's `"10-contact schedule"` heading is a literal and it is wrong: ten
- * ENTRIES, the last of which is a closing message rather than one more caring contact, and only nine
- * are sent when the first contact falls on discharge + 7. Moving the date is the system about to
- * remove a message from a suicide-prevention schedule, so §4.4 requires that stated IN PLACE, before
- * the choice is committed — which is why the preview is live rather than shown after the write.
- *
- * WHAT IT CLAIMS, AND WHAT IT STILL REFUSES TO (Ruling [119], then Ruling [122]). The mockup renders
- * `Agreement confirmed: Yes` as a stored fact. When this screen was built it was not stored at all,
- * and the copy said so. Task 9b closed that: the plan now records an attestation for each
- * confirmation — who confirmed, what, when — so "not recorded on the plan" would be the false
- * sentence here today. That is exactly why the earlier wording stated a fact of the day rather than
- * a permanent property; it took one edit to make true again instead of a hunt.
- *
- * What the screen still refuses to claim is the mockup's actual assertion. `Agreement confirmed:
- * Yes` reads as the patient's agreement being a fact this plan holds. It is not. What the plan holds
- * is that a coordinator confirmed they checked it, and this is the last surface before the plan
- * exists — so it names the act and its actor, never the patient's state.
- *
- * WHAT CONFIRMING ACTUALLY DOES, said in place rather than implied by a verb. It performs TWO
- * writes (Ruling [123]): `POST /api/caring-contacts/plans` creates the plan, its patient detail and
- * its whole twelve-month schedule, and `POST /api/caring-contacts/plans/<id>` with
- * `action: "activate"` then starts it. The wizard IS the activation workflow — the frozen overlay
- * it opens is titled "Last check before the plan starts" — so a screen that created a draft nothing
- * here could start would be doing half of what its own decision surface promises.
- *
- * An earlier version of this comment said the opposite, and the copy beneath it said it to the
- * clinician. That is the `stages.ts` defect this task found and fixed — a comment describing a
- * mechanism the code no longer has — reappearing two functions away in the same file. Finding the
- * class did not stop me writing another instance of it. The wording below is now pinned by tests
- * for exactly that reason: prose nothing asserts on is prose that survives the code changing.
- */
-/**
- * What the identity check compares, from the referral as it was received: the name and hospital
- * record number recorded at intake, and the hospital and discharge date that place the admission.
- * This workspace holds no date of birth, so none is shown. A referral saved without an intake record
- * holds only its synthetic patient identifier, and the check says so rather than showing blanks.
- */
-function identityFacts({
-  patientId,
-  intake,
-}: {
-  patientId: string;
-  intake: ReferralIntakePayload | null;
-}): { label: string; value: string }[] {
-  if (intake === null) {
-    return [
-      { label: "Name", value: "Not held on this referral" },
-      { label: "Synthetic patient identifier", value: patientId },
-    ];
-  }
-  const name = `${intake.givenName} ${intake.familyName}`.trim();
-  return [
-    { label: "Name", value: name === "" ? "Not held on this referral" : name },
-    { label: "Record number", value: intake.patientIdentifier.trim() || patientId },
-    { label: "Hospital", value: intake.hospitalFacility.trim() || "Not held on this referral" },
-    {
-      label: "Discharged",
-      value: intake.dischargeDate.trim() ? awstDateWording(intake.dischargeDate) : "Not held on this referral",
-    },
-  ];
-}
-
 function ReviewStage({
   referralId,
   patientId,
@@ -2773,98 +2314,4 @@ function unavailableReasonFor(input: {
     return submissionRefusalWording(input.preview.refusal).because;
   }
   return "Something this plan needs has not been settled yet, so nothing can be created. The stages behind this one say which.";
-}
-
-/**
- * One refusal, in the three-part shape §4.4 sets, with the wording resolved from its name.
- *
- * `wording` is a parameter because the SAME refusal name means two different things depending on
- * which write produced it: `service-stopped` before the create means nothing exists, and after it
- * means a plan exists and is waiting to be started. One lookup table for both would have to print a
- * sentence that is false in one of the two cases.
- */
-function RefusalStatement({
-  refusal,
-  wording: resolve = submissionRefusalWording,
-}: {
-  refusal: string;
-  wording?: (refusal: string) => SubmissionRefusalWording;
-}) {
-  const wording = resolve(refusal);
-  return (
-    <StatedReason
-      heading={wording.heading}
-      because={wording.because}
-      changedBy={wording.changedBy}
-      icon={<CircleAlert aria-hidden="true" className="size-icon-md shrink-0" />}
-    />
-  );
-}
-
-/**
- * One labelled calendar-day field.
- *
- * Native `disabled` rather than `aria-disabled`, and the difference is the rule rather than a
- * preference: the first-contact day is inert only until the discharge day is entered, which is
- * TRANSIENT inertness and exactly what the native attribute is for. `aria-disabled` plus an inert
- * handler is for a destination that will not exist however long you wait, and the two are never
- * combined on one control.
- */
-function DateField({
-  id,
-  label,
-  value,
-  onChange,
-  hint,
-  min,
-  max,
-  disabled,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  hint: string;
-  min?: string;
-  max?: string;
-  disabled?: boolean;
-}) {
-  const hintId = `${id}-hint`;
-  return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <label htmlFor={id} className="text-sm font-medium text-[color:var(--text-heading)]">
-        {label}
-      </label>
-      <input
-        type="date"
-        id={id}
-        value={value}
-        min={min}
-        max={max}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        aria-describedby={hintId}
-        className={fieldClass}
-      />
-      <p id={hintId} className={mutedTextClass}>
-        {hint}
-      </p>
-    </div>
-  );
-}
-
-/**
- * The refusal name in a body the API refused with, or a named stand-in.
- *
- * `handler.ts` answers every refusal with `{ refusal: string }` and nothing else -- no patient data
- * ever travels in one. Anything else arriving here is an answer this screen did not expect, and it
- * is named as that rather than guessed at: `submissionRefusalWording` is total, so an unrecognised
- * name is still explained and still says the draft survived.
- */
-function refusalNameFrom(payload: unknown): string {
-  if (typeof payload === "object" && payload !== null && "refusal" in payload) {
-    const named = (payload as { refusal: unknown }).refusal;
-    if (typeof named === "string" && named !== "") return named;
-  }
-  return TRANSPORT_REFUSALS.unreadableAnswer;
 }

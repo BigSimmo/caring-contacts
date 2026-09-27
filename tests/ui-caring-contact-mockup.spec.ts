@@ -39,7 +39,7 @@ const overlayMatrix = [
   ["discard-changes", "Discard unsaved changes", "bottom-sheet", "dialog"],
   ["final-activation", "Final activation assurance", "full-screen-stage", "dialog"],
   ["activation-success", "Plan activation recorded", "bottom-sheet", "dialog"],
-  ["pause", "Pause caring-contact plan", "bottom-sheet", "dialog"],
+  ["pause", "Hold this plan", "bottom-sheet", "dialog"],
   ["withdrawal", "Record patient-requested withdrawal", "full-screen-stage", "dialog"],
   ["reassignment", "Reassign plan coordinator", "bottom-sheet", "dialog"],
   ["delivery-detail", "Delivery transport detail", "full-screen-stage", "inspection-drawer"],
@@ -268,8 +268,8 @@ test.describe("@mockup Caring Contact linked prototype", () => {
   test("an open mutation fails closed when connectivity changes before confirmation", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await gotoRoute(page, `${routes.plan}?overlay=pause`, "Plan and contact detail");
-    const dialog = page.getByRole("dialog", { name: "Pause caring-contact plan" });
-    const action = dialog.getByRole("button", { name: "Pause future contacts" });
+    const dialog = page.getByRole("dialog", { name: "Hold this plan" });
+    const action = dialog.getByRole("button", { name: "Hold this plan" });
     await page.evaluate(() => window.dispatchEvent(new Event("offline")));
     await expect(action).toHaveAttribute("aria-disabled", "true");
     await expect(dialog).toContainText("offline");
@@ -284,7 +284,9 @@ test.describe("@mockup Caring Contact linked prototype", () => {
   test("session, permission and version scenarios remain explicit and non-destructive", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await gotoRoute(page, `${routes.plan}?overlay=pause&scenario=permission-unavailable`, "Plan and contact detail");
-    await expect(page.getByRole("button", { name: "Pause future contacts" })).toHaveAttribute("aria-disabled", "true");
+    await expect(
+      page.getByRole("dialog", { name: "Hold this plan" }).getByRole("button", { name: "Hold this plan" }),
+    ).toHaveAttribute("aria-disabled", "true");
     await gotoRoute(
       page,
       `${routes.review}&overlay=final-activation&scenario=version-conflict`,
@@ -323,7 +325,7 @@ test.describe("@mockup Caring Contact linked prototype", () => {
     await gotoRoute(page, `${routes.plan}?overlay=pause`, "Plan and contact detail");
     const planDetail = page.getByTestId("caring-contact-screen-plan-detail");
     const planStatusChip = planDetail.locator('[data-testid="chip"][data-appearance="status"]');
-    await page.getByRole("button", { name: "Pause future contacts" }).click();
+    await page.getByRole("dialog", { name: "Hold this plan" }).getByRole("button", { name: "Hold this plan" }).click();
     await expect(planStatusChip.filter({ hasText: "Paused" })).toBeVisible();
     await expect(page).not.toHaveURL(/overlay=pause/);
     await page.reload({ waitUntil: "domcontentloaded" });
