@@ -93,7 +93,7 @@ describe("RepliesToCheck (Today)", () => {
     const rows = within(section).getAllByTestId("caring-contacts-reply-to-check");
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText(/Stop request · plan paused/)).toBeInTheDocument();
-    expect(within(rows[0]).getByText(/26 Sept 2026, 10:05 am AWST/)).toBeInTheDocument();
+    expect(within(rows[0]).getByText(/10:05 am AWST on 26 September 2026/)).toBeInTheDocument();
     const link = within(rows[0]).getByRole("link", { name: /Review patient/ });
     expect(link.getAttribute("href")).toContain("demo-seed-patient-rowan");
     expect(link.getAttribute("href")).toContain("demo-seed-plan-rowan");
@@ -131,7 +131,7 @@ describe("PatientReplies (patient page)", () => {
     expect(within(section).getByText("1 not yet followed up")).toBeInTheDocument();
     expect(within(section).getByText("Stop, I can't do this anymore")).toBeInTheDocument();
     expect(within(section).getByText(/paused automatically\. Nothing was withdrawn/)).toBeInTheDocument();
-    expect(within(section).getByText(/Followed up 26 Sept 2026, 12:00 pm AWST/)).toBeInTheDocument();
+    expect(within(section).getByText(/Followed up 12:00 pm AWST on 26 September 2026/)).toBeInTheDocument();
     expect(within(section).getAllByRole("button", { name: "Mark followed up" })).toHaveLength(1);
   });
 

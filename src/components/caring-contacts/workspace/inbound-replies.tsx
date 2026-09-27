@@ -23,6 +23,7 @@ import Link from "next/link";
 import { patientPlanRoute } from "@/lib/caring-contacts-routes";
 import type { InboundReplyKind, InboundReplyRecord, InboundReplyWithText } from "@/lib/caring-contacts/inbound-replies";
 
+import { awstDateTimeWording } from "./date-wording";
 import { InboundReplyFollowUpButton } from "./inbound-reply-follow-up-button";
 import { workspacePanel, workspacePanelPadded } from "./surfaces";
 
@@ -34,25 +35,20 @@ export const INBOUND_REPLY_KIND_LABELS: Readonly<Record<InboundReplyKind, string
   optOutRequest: "Stop request",
 });
 
-const AWST_DATE_TIME = new Intl.DateTimeFormat("en-AU", {
-  timeZone: "Australia/Perth",
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-});
-
-/** "26 Sept 2026, 2:05 pm AWST" -- always Perth time, whatever the server's own zone. */
+/**
+ * "10:05 am AWST on 26 September 2026" -- the workspace's own date-time wording, always Perth time.
+ * It used to be an `Intl.DateTimeFormat`, whose month abbreviation depends on the runtime's ICU data
+ * ("Sep" or "Sept"); `awstDateTimeWording` spells the month out and reads the same everywhere.
+ */
 export function formatReplyInstant(instant: Date): string {
-  return `${AWST_DATE_TIME.format(instant)} AWST`;
+  return awstDateTimeWording(instant.toISOString());
 }
 
 function KindBadge({ reply }: { reply: InboundReplyRecord }) {
   if (reply.kind === "optOutRequest") {
     return (
       <span className={`${badgeClass} bg-[color:var(--warning-bg)] text-[color:var(--warning-text)]`}>
-        <OctagonPause aria-hidden="true" className="size-3" />
+        <OctagonPause aria-hidden="true" className="size-icon-xs" />
         {INBOUND_REPLY_KIND_LABELS.optOutRequest}
         {reply.planPaused ? " · plan paused" : ""}
       </span>
@@ -60,7 +56,7 @@ function KindBadge({ reply }: { reply: InboundReplyRecord }) {
   }
   return (
     <span className={`${badgeClass} bg-[color:var(--clinical-accent-soft)] text-[color:var(--clinical-accent)]`}>
-      <MessageSquareReply aria-hidden="true" className="size-3" />
+      <MessageSquareReply aria-hidden="true" className="size-icon-xs" />
       {INBOUND_REPLY_KIND_LABELS.reply}
     </span>
   );
@@ -119,7 +115,7 @@ export function RepliesToCheck({ replies }: { replies: readonly InboundReplyReco
                 data-internal-link="true"
                 className="inline-flex min-h-tap items-center gap-1 whitespace-nowrap text-xs font-medium text-[color:var(--command)] hover:underline"
               >
-                Review patient <ArrowRight aria-hidden="true" className="size-3" />
+                Review patient <ArrowRight aria-hidden="true" className="size-icon-xs" />
               </Link>
             </li>
           ))}

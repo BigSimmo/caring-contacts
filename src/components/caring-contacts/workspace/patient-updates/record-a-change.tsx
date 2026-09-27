@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { cn, ignoreUnavailableActivation } from "@/components/ui-primitives";
 import { awstCalendarDay } from "@/lib/caring-contacts/clock";
 
+import { MOBILE_CHECKED_TICK_LABEL } from "../mobile-number-check";
 import { planLifecycleEndpoint, planActionRefusalWording } from "../plan-action-rules";
 import {
   contactsCancelledFrom,
@@ -527,7 +528,7 @@ function MobileChange({
           role="group"
           aria-label="Check this number before saving"
           data-testid="caring-contacts-update-mobile-shared"
-          className="flex min-w-0 flex-col gap-1 rounded-[var(--radius-md)] border border-[color:var(--danger-border)] bg-[color:var(--surface)] px-3 py-2 forced-colors:border-[CanvasText]"
+          className="flex min-w-0 flex-col gap-1 rounded-[var(--radius-md)] border border-[color:var(--warning-border)] bg-[color:var(--warning-soft)] px-3 py-2 forced-colors:border-[CanvasText]"
         >
           <p className="text-sm font-semibold text-[color:var(--text-heading)]">Check this number before saving</p>
           <p className={mutedTextClass}>
@@ -541,7 +542,7 @@ function MobileChange({
             onChange={setCheckedByHand}
             testId="caring-contacts-update-mobile-checked"
           >
-            I have checked this number is right
+            {MOBILE_CHECKED_TICK_LABEL}
           </TickRow>
         </div>
       ) : null}
