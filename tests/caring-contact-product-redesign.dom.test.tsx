@@ -109,9 +109,9 @@ describe("Caring Contact product redesign", () => {
     expect(screen.getByRole("heading", { name: "Plan and contact detail", level: 1 })).toBeInTheDocument();
     expect(screen.getByText(/Example twelve-month pathway · SYN-v0.3/)).toBeInTheDocument();
 
-    const pauseTrigger = screen.getByRole("button", { name: "Pause plan" });
+    const pauseTrigger = screen.getByRole("button", { name: "Hold this plan" });
     await user.click(pauseTrigger);
-    const pauseDialog = screen.getByRole("dialog", { name: "Pause caring-contact plan" });
+    const pauseDialog = screen.getByRole("dialog", { name: "Hold this plan" });
     await user.click(within(pauseDialog).getAllByRole("button", { name: "Cancel" })[1]!);
     await waitFor(() => expect(pauseTrigger).toHaveFocus());
 

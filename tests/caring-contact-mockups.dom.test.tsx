@@ -44,7 +44,7 @@ const expectedOverlayLabels = [
   "Discard changes",
   "Final activation",
   "Activation success",
-  "Pause",
+  "Hold",
   "Withdrawal",
   "Reassignment",
   "Delivery detail",

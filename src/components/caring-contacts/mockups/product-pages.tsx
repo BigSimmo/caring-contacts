@@ -724,7 +724,7 @@ export function PlanDetailProductPage({
           <SectionHeading id="plan-actions-heading" title="Plan actions" compact />
           {/*
             The panel answers the plan's OWN state. Until now only `status === "Paused"` was read,
-            and only to relabel one button: a Withdrawn plan still offered a live "Pause plan" and
+            and only to relabel one button: a Withdrawn plan still offered a live "Hold this plan" and
             a live "Record withdrawal" — the second of which this screen's own confirmation copy
             describes as permanently cancelling every unsent contact, on a plan where that has
             already happened. A Draft plan, which has not started sending, still offered "Open
@@ -748,7 +748,7 @@ export function PlanDetailProductPage({
                   block
                   onClick={() => (onOpenOverlay ? onOpenOverlay("pause") : setPauseOpen(true))}
                 >
-                  {status === "Paused" ? "Resume plan" : "Pause plan"}
+                  {status === "Paused" ? "Let this plan run again" : "Hold this plan"}
                 </Button>
                 <Button
                   variant="secondary"
@@ -770,7 +770,7 @@ export function PlanDetailProductPage({
                 ) : null}
                 <p className="text-xs leading-5 text-[color:var(--text-muted)]">
                   {planIsSending
-                    ? "Pause preserves the original calendar and skips contacts that fall inside the pause."
+                    ? "Holding keeps the original calendar; a message whose time passes during the hold is not sent later."
                     : "This plan has not started sending, so there are no deliveries to raise an exception against."}
                 </p>
               </>
@@ -787,10 +787,10 @@ export function PlanDetailProductPage({
       <ConfirmDialog
         open={!onOpenOverlay && pauseOpen}
         onCancel={() => setPauseOpen(false)}
-        onConfirm={() => recordPrototypeOutcome("Prototype pause reviewed. The synthetic plan was not changed.")}
-        title="Pause caring-contact plan"
-        description="Future contacts inside the pause would be skipped permanently. The original cadence would remain unchanged."
-        confirmLabel="Pause future contacts"
+        onConfirm={() => recordPrototypeOutcome("Prototype hold reviewed. The synthetic plan was not changed.")}
+        title="Hold this plan"
+        description="Nothing would be sent while the plan is held, and a message whose time passes during the hold would not be sent later. No date would move."
+        confirmLabel="Hold this plan"
         tone="primary"
       />
       <ConfirmDialog

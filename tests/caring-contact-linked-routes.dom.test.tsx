@@ -111,16 +111,16 @@ describe("Caring Contact routable mockup", () => {
 
   it("keeps a governed mutation unavailable when the reconstructed role loses permission", () => {
     renderRoute(CARING_CONTACT_MOCKUP_ROUTES.plan, "overlay=pause&scenario=permission-unavailable");
-    const dialog = screen.getByRole("dialog", { name: "Pause caring-contact plan" });
-    const action = within(dialog).getByRole("button", { name: "Pause future contacts" });
+    const dialog = screen.getByRole("dialog", { name: "Hold this plan" });
+    const action = within(dialog).getByRole("button", { name: "Hold this plan" });
     expect(action).toHaveAttribute("aria-disabled", "true");
     expect(within(dialog).getByText(/Permission is unavailable/i)).toBeInTheDocument();
   });
 
   it("rechecks connectivity after a decision surface has already opened", () => {
     renderRoute(CARING_CONTACT_MOCKUP_ROUTES.plan, "overlay=pause");
-    const dialog = screen.getByRole("dialog", { name: "Pause caring-contact plan" });
-    const action = within(dialog).getByRole("button", { name: "Pause future contacts" });
+    const dialog = screen.getByRole("dialog", { name: "Hold this plan" });
+    const action = within(dialog).getByRole("button", { name: "Hold this plan" });
     expect(action).not.toHaveAttribute("aria-disabled");
     act(() => window.dispatchEvent(new Event("offline")));
     expect(action).toHaveAttribute("aria-disabled", "true");
@@ -156,7 +156,7 @@ describe("Caring Contact routable mockup", () => {
     );
 
     const planNavigate = renderRoute(CARING_CONTACT_MOCKUP_ROUTES.plan);
-    await user.click(screen.getAllByRole("button", { name: "Pause plan" }).at(-1)!);
+    await user.click(screen.getAllByRole("button", { name: "Hold this plan" }).at(-1)!);
     expect(planNavigate).toHaveBeenCalledWith("/mockups/caring-contacts/plans/SYN-PLAN-001?overlay=pause");
 
     await user.click(screen.getAllByRole("button", { name: "Reassign coordinator" }).at(-1)!);
