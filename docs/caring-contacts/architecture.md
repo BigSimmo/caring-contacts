@@ -1,12 +1,18 @@
 # Caring Contacts: architecture excerpts
 
-Copied from PsychSift `docs/codebase-index.md` at commit f75eeb11e for this standalone copy. File paths match this copy.
+Adapted from PsychSift `docs/codebase-index.md` at commit f75eeb11e. The extracted
+host used a Tools catalogue entry. Current standalone routing is recorded below;
+other inherited details remain a source snapshot and require current-code checks.
+
+The standalone `/` route redirects to `/caring-contacts` (`src/app/page.tsx`).
+The demo session, optional database and live-provider seams remain separately gated;
+see the [README](../../README.md) and [governance checklist](pilot-governance-checklist.md).
 
 ## Pages
 
 | Route                                                                                                                                                                                                                                                                           | File                                                     |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `/caring-contacts` (standalone workspace; own nav, entered from Tools)                                                                                                                                                                                                          | `src/app/caring-contacts/`                               |
+| `/caring-contacts` (standalone workspace; own nav, entered by the standalone home redirect)                                                                                                                                                                                     | `src/app/caring-contacts/`                               |
 | `/caring-contacts/patients` (permission-scoped caseload: one row per plan plus an authorised names-only projection; URL state filter and local name/identifier search)                                                                                                          | `src/app/caring-contacts/patients/page.tsx`              |
 | `/caring-contacts/patients/[patientId]` (one patient's episode: identity, the plan, and its twelve-month schedule; the ONE screen that may call `getEpisode`)                                                                                                                   | `src/app/caring-contacts/patients/[patientId]/page.tsx`  |
 | `/caring-contacts/plans/new` (the activation wizard: agreement, pathway, personalisation, review; started for one accepted referral named by `?referral=`)                                                                                                                      | `src/app/caring-contacts/plans/new/page.tsx`             |
@@ -32,7 +38,7 @@ privacy-safe audit records, and is exercised against both in-memory and local Po
 repositories. `src/lib/caring-contacts-server/` is the server-side seam for the demo session
 and optional separate database connection. It must fail closed in production and must never
 connect to the `Clinical KB Database` Supabase project. The standalone `src/app/caring-contacts/` workspace
-is noindex, visibly marked synthetic, and has a single inbound entry from the Tools catalogue.
+is noindex, visibly marked synthetic, and is entered by the standalone home redirect. The Tools-catalogue entry belongs to the former host.
 
 Inside the workspace, `src/components/caring-contacts/workspace/shell.tsx` owns the whole
 destination set: a destination carries an `href` only once its page exists, and every other one

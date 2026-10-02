@@ -1,5 +1,13 @@
 # Caring Contacts — hazard log
 
+> **Standalone provenance correction — 2 October 2026.** Extraction source: PsychSift
+> `f75eeb11e` (25 September 2026). The missing audit/clinical references below are
+> historical source limitations, not available standalone evidence or completed review.
+> Use the [pilot governance checklist](pilot-governance-checklist.md) and [standalone hazard log](hazard-log.md)
+> for current review navigation. They do not replace missing evidence or approve a pilot.
+> Historical verification dates and reconstruction warnings remain; no support numbers
+> or clinical conclusions were reverified for this repair.
+
 > **DRAFT — requires clinical sign-off by the owner before any real-patient use.**
 >
 > This document is a starting point assembled from what this repository already records. It is
@@ -12,19 +20,18 @@
 **Scope:** the Caring Contacts workspace only — `src/lib/caring-contacts/**`,
 `src/lib/caring-contacts-server/**`, `src/components/caring-contacts/**` and
 `src/app/caring-contacts/**`. It does **not** cover the PsychSift answer pipeline; that has its own
-register in [`docs/clinical-hazard-analysis.md`](../clinical-hazard-analysis.md) and
-[`docs/clinical-hazard-controls.json`](../clinical-hazard-controls.json), and the two must not be
+register in `docs/clinical-hazard-analysis.md` (former PsychSift source; unavailable in this standalone copy) and
+`docs/clinical-hazard-controls.json` (former PsychSift source; unavailable in this standalone copy), and the two must not be
 read as one document.
 
 ## Why this file was written from scratch
 
 Outstanding-issue row `#1S81R8` cites `docs/caring-contacts/hazard-log.md` as an existing record of
-hazards H-00, H-04 and H-05, and `#TDKW4W` cites hazard H-44. **No such file has ever existed in
-this repository.** `git log --all --name-only` across the full fetched history returns no path
+hazards H-00, H-04 and H-05, and `#TDKW4W` cites hazard H-44. **The original file was not found in the former PsychSift history inspected for the September 2026 reconstruction.** `git log --all --name-only` across the full fetched history returns no path
 matching `hazard-log`, and the recovery command in
 [`phase-1-handoff.md`](phase-1-handoff.md) named a commit that is not a valid object. The
 2026-09-02 repository audit records this as finding M6
-([`docs/audit/full-repository-audit-2026-09-02.md`](../audit/full-repository-audit-2026-09-02.md),
+(`docs/audit/full-repository-audit-2026-09-02.md` (former PsychSift source; unavailable in this standalone copy),
 §M6) and independently confirmed it.
 
 So this is a **reconstruction, not a recovery**. Two consequences the reader must hold onto:
@@ -233,5 +240,5 @@ signed document is worse than an absent one.
 - [`phase-1-handoff.md`](phase-1-handoff.md) — Phase 1 record and the owner's open decisions.
 - [`PROGRESS-LEDGER.md`](PROGRESS-LEDGER.md) — programme history and where the external handoff
   bundles live.
-- [`docs/clinical-governance.md`](../clinical-governance.md) — repository-wide clinical governance
+- `docs/clinical-governance.md` (former PsychSift source; unavailable in this standalone copy) — repository-wide clinical governance
   checklist (a different system; read the scope note at the top of this file).
