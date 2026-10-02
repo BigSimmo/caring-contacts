@@ -1,5 +1,13 @@
 # Care Plan — crisis line verification record
 
+> **Standalone provenance correction — 2 October 2026.** Extraction source: PsychSift
+> `f75eeb11e` (25 September 2026). The missing audit/clinical references below are
+> historical source limitations, not available standalone evidence or completed review.
+> Use the [pilot governance checklist](../caring-contacts/pilot-governance-checklist.md) and [standalone hazard log](../caring-contacts/hazard-log.md)
+> for current review navigation. They do not replace missing evidence or approve a pilot.
+> Historical verification dates and reconstruction warnings remain; no support numbers
+> or clinical conclusions were reverified for this repair.
+
 > **DRAFT — requires clinical sign-off by the owner before any real-patient use.**
 >
 > This is a record of what the repository already asserts about four public telephone numbers, and
@@ -21,7 +29,7 @@ verification-record comment in the fixture; the values themselves are untouched.
 ## Why this record exists
 
 The 2026-09-02 repository audit
-([`docs/audit/full-repository-audit-2026-09-02.md`](../audit/full-repository-audit-2026-09-02.md))
+(`docs/audit/full-repository-audit-2026-09-02.md` (former PsychSift source; unavailable in this standalone copy))
 recorded that the four real public crisis numbers carry a `verifiedOn` date of `2026-08-20` and a
 comment saying to correct them if they have changed, but that **nothing ages that date** — no test,
 no gate and no ledger row — while the same file models its synthetic community-team contacts as

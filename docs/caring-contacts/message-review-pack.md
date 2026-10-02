@@ -1,5 +1,13 @@
 # Caring Contacts — message review pack
 
+> **Standalone provenance correction — 2 October 2026.** Extraction source: PsychSift
+> `f75eeb11e` (25 September 2026). The missing audit/clinical references below are
+> historical source limitations, not available standalone evidence or completed review.
+> Use the [pilot governance checklist](pilot-governance-checklist.md) and [standalone hazard log](hazard-log.md)
+> for current review navigation. They do not replace missing evidence or approve a pilot.
+> Historical verification dates and reconstruction warnings remain; no support numbers
+> or clinical conclusions were reverified for this repair.
+
 > **DRAFT — requires clinical sign-off by the owner before any real-patient use.**
 >
 > This pack is a starting point assembled from what this repository already contains. It is **not
@@ -17,9 +25,9 @@ governing check actually runs.
 
 `src/lib/caring-contacts/message-copy.ts:11` and `:20`, and two archived task briefs, cite
 `docs/caring-contacts/message-review-pack.md` as "the lived-experience and clinical-programme
-approval gate that owns final wording". **The file has never existed in this repository** — see the
+approval gate that owns final wording". **The original file was not found in the former PsychSift history inspected for the September 2026 reconstruction** — see the
 same note in [`hazard-log.md`](hazard-log.md) and finding M6 of
-[`docs/audit/full-repository-audit-2026-09-02.md`](../audit/full-repository-audit-2026-09-02.md).
+`docs/audit/full-repository-audit-2026-09-02.md` (former PsychSift source; unavailable in this standalone copy).
 This is a reconstruction from the code, not a recovery of the original. The original's structure,
 its facilitation questions and any prior review notes are lost.
 

@@ -5,8 +5,11 @@ This folder holds Caring Contacts on its own. It was pulled out of the PsychSift
 Contacts, everything it needs to run, and the related tests, documents and tooling. Nothing
 else from PsychSift is included, and the original repository was not changed.
 
-**It is a synthetic prototype.** Every patient, phone number and message in it is invented,
-and nothing is ever sent to a real number. It is not approved for real patients.
+**It is a synthetic prototype, not approved for real patients.** Example patient and
+contact identities are invented; sending is simulated by default. Provisional message
+copy includes real public support numbers, whose current availability was not checked
+for this documentation repair. Optional live sending requires separate provider authority,
+clinical/privacy approvals and the documented governance gates; this repair enables none.
 
 ## What is in here
 
@@ -17,8 +20,8 @@ and nothing is ever sent to a real number. It is not approved for real patients.
 | `src/lib/caring-contacts/`, `src/lib/caring-contacts-server/`                 | The rules and data handling: schedules, message wording rules, permissions, audit trail, retention, the in-memory demo store and the Postgres store                                                  |
 | `src/components/caring-contacts/workspace/`                                   | The screens and parts of the working app                                                                                                                                                             |
 | `src/app/mockups/caring-contacts/`, `src/components/caring-contacts/mockups/` | The clickable design prototypes                                                                                                                                                                      |
-| `caring-contacts/supabase/migrations/`                                        | The database tables and security rules (12 files)                                                                                                                                                    |
-| `tests/`                                                                      | 98 test files: 92 quick checks, 2 database checks and 4 browser journeys, plus helpers                                                                                                               |
+| `caring-contacts/supabase/migrations/`                                        | The database tables and security rules; see the migration files in this folder                                                                                                                       |
+| `tests/`                                                                      | Unit, database and browser tests, plus helpers; see the files in this folder                                                                                                                         |
 | `docs/caring-contacts/`                                                       | Design notes, hazard log, governance checklist, copy review, build records, handovers, screenshot atlas, `architecture.md` (how it is built) and `issues-snapshot.md` (its open and resolved issues) |
 | `docs/superpowers/`                                                           | The original design specifications and phase plans (8 files)                                                                                                                                         |
 | `docs/` (other)                                                               | Crisis-line records, the sovereign-hosting specification, and the design-system entry for the workspace                                                                                              |
@@ -81,7 +84,7 @@ The database checks need a throwaway local Postgres, never a live database. With
 CARING_CONTACTS_DATABASE_URL=postgres://postgres@127.0.0.1:54329/postgres npm run caring-contacts:db:test
 ```
 
-## What was checked when this copy was made
+## Historical checks when this copy was made — September 2026
 
 - Type check: clean.
 - `npm test`: 92 files, 1,753 tests passed, 2 skipped.
