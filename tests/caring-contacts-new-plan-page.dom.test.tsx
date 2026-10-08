@@ -23,10 +23,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   store: { current: null as unknown },
+  liveDraftCase: false,
   notFound: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
   }),
 }));
+
+vi.mock("@/lib/caring-contacts-server/workspace-gate", async (original) => {
+  const gate = await original<typeof import("@/lib/caring-contacts-server/workspace-gate")>();
+  return {
+    ...gate,
+    isCaringContactsLiveEnabled: () => mocks.liveDraftCase || gate.isCaringContactsLiveEnabled(),
+    isCaringContactsWorkspaceEnabled: () => mocks.liveDraftCase || gate.isCaringContactsWorkspaceEnabled(),
+  };
+});
 
 vi.mock("next/headers", () => ({
   cookies: vi.fn(async () => ({ get: (name: string) => mockCookies[name] })),
@@ -42,6 +52,10 @@ vi.mock("@/lib/caring-contacts-server/store", () => ({
 }));
 
 import { CARING_CONTACTS_ROLE_COOKIE, demoActorForRole } from "@/lib/caring-contacts-server/session";
+import {
+  CARING_CONTACTS_PRODUCTION_SESSION_COOKIE,
+  signProductionSession,
+} from "@/lib/caring-contacts-server/session-token";
 import type { AccessRecord } from "@/lib/caring-contacts/access-audit";
 import { fixedClock } from "@/lib/caring-contacts/clock";
 import { idempotencyKey, pathwayVersionId, patientId, referralId } from "@/lib/caring-contacts/ids";
@@ -202,6 +216,7 @@ async function renderBody(searchParams: Record<string, string | string[] | undef
 }
 
 beforeEach(() => {
+  mocks.liveDraftCase = false;
   mockCookies = {};
   mocks.store.current = null;
   mocks.notFound.mockClear();
@@ -212,7 +227,34 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("the /caring-contacts/plans/new page — the service state stays on the server (Ruling [109])", () => {
+describe("the /caring-contacts/plans/new page - the service state stays on the server (Ruling [109])", () => {
+  it("binds the live wizard to each page request's verified owner, without passing service state", async () => {
+    const { store } = inMemoryStoreWithSpy();
+    await seedAcceptedReferral(store);
+    // Import the page while the test JSX development runtime is active, before the production gate.
+    await import("@/app/caring-contacts/plans/new/page");
+    const secret = "synthetic-offline-hmac-for-draft-page-only";
+    vi.stubEnv("CARING_CONTACTS_SESSION_HMAC_SECRET", secret);
+    vi.stubEnv("CARING_CONTACTS_DEMO_ENABLED", "false");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("PLAYWRIGHT_OFFLINE_MODE", "false");
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "false");
+    // This case exercises signed sessions against the already mocked in-memory store, never a DB.
+    mocks.liveDraftCase = true;
+    const exp = Math.floor(Date.now() / 1000) + 60;
+    for (const actorId of ["synthetic-staff-A", "synthetic-staff-B"]) {
+      mockCookies[CARING_CONTACTS_PRODUCTION_SESSION_COOKIE] = {
+        value: signProductionSession({ actorId, teamId: "demo-team", roles: ["coordinator"], exp }, secret),
+      };
+      const page = await loadPage({ referral: REFERRAL });
+      const gate = page.props.children;
+      expect(Object.keys(gate.props).sort()).toEqual(["children", "session"]);
+      expect(gate.props.session).toEqual({ actorId, teamId: "demo-team", expiresAt: exp * 1000 });
+      const wizard = gate.props.children as ReactElement<Record<string, unknown>>;
+      expect(wizard.props.actorId).toBe(actorId);
+      expect(Object.keys(wizard.props)).not.toContain("serviceState");
+    }
+  });
   it("hands the wizard no service state and nothing derived from one, during a live incident", async () => {
     const { store } = inMemoryStoreWithSpy();
     await seedAcceptedReferral(store);

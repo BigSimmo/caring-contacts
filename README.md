@@ -141,8 +141,20 @@ comment in the file:
   Connect); set-up steps are under "Staff sign-in" in `deploy/australia/README.md`. It still needs
   the governance sign-off and the other items below. Sign-in was issue #96R2JZ in
   `docs/caring-contacts/issues-snapshot.md`.
-- **Nothing clears a half-written plan in the browser when a different person signs in on the
-  same computer.** In PsychSift, its own sign-in system triggered that clean-up.
+- **Half-written plans have a tab-local staff/team owner.** The live layout observes expiry without
+  hiding server-rendered screens. The wizard is gated using its own page request's verified session,
+  rather than a cached layout identity; unknown or changed owners are cleared before draft readers
+  mount. Sign-out revokes the browser binding and clears stored and in-memory drafts. Suspended or
+  restored documents (including soft back/forward navigation) block cached readers and request a full reload through the existing signed
+  session check; a valid same-user draft is retained for that fresh document. The owner marker is
+  metadata, never an authentication credential. If browser storage is unavailable, an automatic
+  reload can discard the in-memory fallback, just as a manual refresh does. The live wizard now warns
+  when draft storage is refused that returning to the tab may reload it and discard unsaved changes;
+  the warning also covers quota failures even when owner metadata is stored successfully.
+  No additional draft persistence is introduced. Focused synthetic lifecycle, page and confidentiality suites pass locally;
+  synthetic signed-session browser checks cover native sign-out, expiry, account changes, focus
+  reloads, same-user draft preservation and browser Back. BFCache restoration events were simulated;
+  genuine BFCache, operating-system suspension and real identity-provider behaviour remain unverified.
 
 ## Left behind on purpose
 

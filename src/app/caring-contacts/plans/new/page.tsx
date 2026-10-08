@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import dynamic from "next/dynamic";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import {
@@ -8,6 +9,12 @@ import {
   type StartableReferral,
 } from "@/components/caring-contacts/workspace/plan-wizard/plan-start-state";
 import type { PlanWizardPathwayOption } from "@/components/caring-contacts/workspace/plan-wizard/plan-wizard";
+import { BrowserSessionBoundary } from "@/components/caring-contacts/workspace/browser-session-boundary";
+import {
+  CARING_CONTACTS_PRODUCTION_SESSION_COOKIE,
+  parseProductionSessionClaims,
+} from "@/lib/caring-contacts-server/session-token";
+import { isCaringContactsLiveEnabled } from "@/lib/caring-contacts-server/workspace-gate";
 import { CARING_CONTACTS_REFERRAL_QUERY_PARAM } from "@/lib/caring-contacts-routes";
 import { auditedRead } from "@/lib/caring-contacts-server/handler";
 import { isCaringContactsWorkspaceEnabled, resolveCaringContactsActor } from "@/lib/caring-contacts-server/session";
@@ -145,6 +152,12 @@ export default async function CaringContactsNewPlanPage({
 }) {
   if (!isCaringContactsWorkspaceEnabled()) notFound();
   const actor = await resolveCaringContactsActor();
+  // This page's request, not a retained layout, owns the wizard's draft identity.
+  const draftSession = isCaringContactsLiveEnabled()
+    ? parseProductionSessionClaims((await cookies()).get(CARING_CONTACTS_PRODUCTION_SESSION_COOKIE)?.value)
+    : null;
+  if (isCaringContactsLiveEnabled() && !draftSession)
+    throw new Error("Caring Contacts production session is unavailable.");
   const store = await caringContactsStore();
   const requestedReferralId = readRequestedReferralId(await searchParams);
 
@@ -361,7 +374,7 @@ export default async function CaringContactsNewPlanPage({
       throw new Error("Caring Contacts access trail is unavailable; nothing was rendered.");
     }
 
-    return (
+    const wizard = (
       <PlanWizard
         referralId={referral.id}
         patientId={referral.patientId}
@@ -375,6 +388,15 @@ export default async function CaringContactsNewPlanPage({
         patientVisibleMessageSpecimen={EXACT_PATIENT_VISIBLE_MESSAGE}
         intakePrefill={intakeRead.released}
       />
+    );
+    return draftSession ? (
+      <BrowserSessionBoundary
+        session={{ actorId: draftSession.actorId, teamId: draftSession.teamId, expiresAt: draftSession.exp * 1000 }}
+      >
+        {wizard}
+      </BrowserSessionBoundary>
+    ) : (
+      wizard
     );
   }
 }
