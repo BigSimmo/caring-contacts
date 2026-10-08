@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { SignOutForm } from "./sign-out-form";
 
 import { isCaringContactsLiveEnabled } from "@/lib/caring-contacts-server/workspace-gate";
 import type { ComponentType, ReactNode, SVGProps } from "react";
@@ -554,12 +555,12 @@ export function CaringContactsShell({
                   {/* Live mode only: staff arrive through sign-in, so they need a way out. Demo and
                       development have no sign-in, so nothing is shown there. */}
                   {isCaringContactsLiveEnabled() ? (
-                    <form action="/api/caring-contacts/auth/sign-out" method="post">
+                    <SignOutForm>
                       <button type="submit" className={`${floatingControl} shrink-0`}>
                         <LogOut aria-hidden="true" className="size-icon-md shrink-0" />
                         <span>Sign out</span>
                       </button>
-                    </form>
+                    </SignOutForm>
                   ) : null}
                 </div>
               </div>

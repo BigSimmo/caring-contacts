@@ -237,6 +237,12 @@ const WORKSPACE_DIR = path.join(process.cwd(), "src", "components", "caring-cont
  * failing test pass.
  */
 const ALLOWED_CLIENT_COMPONENTS = [
+  // Draft lifecycle needs browser storage, expiry timers and a native submit listener.
+  // The observer receives only verified staff/team/expiry metadata; the page gate holds only the wizard.
+  // the form receives only its rendered button. Neither receives a service-state record.
+  // The module-graph test below explicitly follows the draft-session helper at both seams.
+  "browser-session-boundary.tsx",
+  "sign-out-form.tsx",
   // A declared-but-unbuilt destination: `aria-disabled` plus an inert click handler, so
   // the stated reason keeps its tab stop. Takes only `id`/`label`/`reason`/`className`.
   "unavailable-destination.tsx",
@@ -487,7 +493,8 @@ function resolveGuardedModule(fromFile: string, specifier: string): string | nul
     base = path.resolve(path.dirname(fromFile), specifier);
   } else if (specifier.startsWith("@/")) {
     base = path.join(process.cwd(), "src", specifier.slice(2));
-    if (!base.split(path.sep).includes("caring-contacts")) return null;
+    if (!base.split(path.sep).includes("caring-contacts") && specifier !== "@/lib/caring-contacts-browser-session")
+      return null;
   } else {
     return null;
   }
@@ -619,6 +626,12 @@ describe("the comment stripper the two source guards are built on", () => {
 });
 
 describe("the service-state path stays on the server", () => {
+  it("includes the browser draft-session helper in both client seam graphs", () => {
+    const helper = path.join(process.cwd(), "src/lib/caring-contacts-browser-session.ts");
+    for (const name of ["browser-session-boundary.tsx", "sign-out-form.tsx"]) {
+      expect(guardedModuleGraph(path.join(WORKSPACE_DIR, name))).toContain(helper);
+    }
+  });
   it("keeps every workspace component but the allowlisted client controls a Server Component", () => {
     const clientComponents = workspaceSourceFiles()
       .filter(({ source }) => USE_CLIENT_DIRECTIVE.test(source))

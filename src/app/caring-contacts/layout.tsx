@@ -1,5 +1,14 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+
+import { BrowserSessionBoundary } from "@/components/caring-contacts/workspace/browser-session-boundary";
+import {
+  CARING_CONTACTS_PRODUCTION_SESSION_COOKIE,
+  parseProductionSessionClaims,
+} from "@/lib/caring-contacts-server/session-token";
+import { isCaringContactsLiveEnabled } from "@/lib/caring-contacts-server/workspace-gate";
 
 import { PRIVATE_APP_ROBOTS_METADATA } from "@/lib/crawler-policy";
 
@@ -15,6 +24,18 @@ export const metadata: Metadata = {
   robots: PRIVATE_APP_ROBOTS_METADATA,
 };
 
-export default function CaringContactsLayout({ children }: { children: ReactNode }) {
-  return children;
+export default async function CaringContactsLayout({ children }: { children: ReactNode }) {
+  if (!isCaringContactsLiveEnabled()) return children;
+  const raw = (await cookies()).get(CARING_CONTACTS_PRODUCTION_SESSION_COOKIE)?.value;
+  const claims = parseProductionSessionClaims(raw);
+  if (!claims) redirect("/api/caring-contacts/auth/sign-in");
+  return (
+    <>
+      {/* Observe expiry without hiding server screens or passing their contents across this seam. */}
+      <BrowserSessionBoundary
+        session={{ actorId: claims.actorId, teamId: claims.teamId, expiresAt: claims.exp * 1000 }}
+      />
+      {children}
+    </>
+  );
 }

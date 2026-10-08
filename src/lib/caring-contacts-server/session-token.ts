@@ -66,6 +66,16 @@ export function parseProductionSessionCookieValue(
   runtime: Record<string, string | undefined> = process.env,
   nowMs = Date.now(),
 ): Actor | null {
+  const claims = parseProductionSessionClaims(raw, runtime, nowMs);
+  return claims ? { id: actorId(claims.actorId), teamId: teamId(claims.teamId), roles: claims.roles } : null;
+}
+
+/** Verified claims, including expiry for the browser draft lifecycle. Never expose the cookie itself. */
+export function parseProductionSessionClaims(
+  raw: string | undefined,
+  runtime: Record<string, string | undefined> = process.env,
+  nowMs = Date.now(),
+): ProductionSessionClaims | null {
   if (!raw) return null;
   const secret = productionSessionSecret(runtime);
   if (!secret) return null;
@@ -82,7 +92,7 @@ export function parseProductionSessionCookieValue(
     if (claims.exp * 1000 < nowMs) return null;
     const roles = claims.roles.filter(isDemoRole);
     if (roles.length === 0) return null;
-    return { id: actorId(claims.actorId), teamId: teamId(claims.teamId), roles };
+    return { actorId: claims.actorId, teamId: claims.teamId, roles, exp: claims.exp };
   } catch {
     return null;
   }
