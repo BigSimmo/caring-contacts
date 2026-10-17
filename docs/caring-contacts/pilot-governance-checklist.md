@@ -27,7 +27,7 @@ This document establishes the mandatory verification criteria, sign-off workflow
   - Emergency Service Stop: The CSO holds unilateral authority to trigger a service-wide safety stop (`/caring-contacts/service-stop`) halting all SMS dispatches during system anomalies or clinical incidents.
   - Pathway Approval: Dual-sign-off requirement for all new or modified caring contact pathways (`PathwayVersion`), verifying sending cadences, trigger windows, and clinical suitability.
   - Incident Escalation: Mandatory notification to the CSO for any delivery failure exception older than 4 hours, acute hospital re-admission notification, or report of adverse clinical events.
-  - Attestation Gate: Any toggle disabling demo/training mode or configuring live SMS credentials (`CARING_CONTACTS_MODE=live`) requires a cryptographically referenced attestation signed by the CSO.
+  - Attestation Gate: Any toggle disabling demo/training mode or configuring live SMS credentials (`CARING_CONTACTS_DEMO_ENABLED=false`) requires a cryptographically referenced attestation signed by the CSO.
 
 ---
 
@@ -77,7 +77,9 @@ In Western Australia, suicide-aftercare services operate in diverse urban, regio
 
 ## 4. Attestation Verification Schema
 
-The application tier enforces an attestation file check (`assertPilotGovernanceReady`) in `src/lib/caring-contacts/pilot-governance.ts`. When moving outside of synthetic demo mode, the following JSON document must be present and verified:
+The startup adapter in `src/instrumentation-node.ts` trims surrounding whitespace from `CARING_CONTACTS_GOVERNANCE_ATTESTATION_JSON`, then authenticates that resulting UTF-8 JSON string (preserving internal whitespace) with an HMAC-SHA256 hex digest supplied in `CARING_CONTACTS_GOVERNANCE_ATTESTATION_MAC` and keyed by `CARING_CONTACTS_GOVERNANCE_HMAC_SECRET`. It then calls `assertPilotGovernanceReady` in `src/lib/caring-contacts/pilot-governance.ts` to validate the attestation. The live-mode switch is `CARING_CONTACTS_DEMO_ENABLED=false`; `CARING_CONTACTS_MODE` is not this startup adapter's switch. A file or `digitalSignatureRef` alone does not authenticate this configuration. Provision these settings only through the separately authorised secrets/configuration process described in [the Australian deployment guide](../../deploy/australia/README.md). Never paste secret or signed configuration values into audit logs.
+
+The following is a schema illustration with fictional placeholders, not a clinical approval or an authenticated payload. Replace it only through the documented human sign-off process before real operation:
 
 ```json
 {

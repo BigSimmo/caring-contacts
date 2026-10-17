@@ -9,8 +9,10 @@ items that matter most before any real patient.
 1. **[most impact] Clinical, privacy and lived-experience sign-off.** Before any real patient:
    1. Have the clinical lead and a lived-experience representative approve the final message
       wording for every message type, including the first and closing messages (none exist yet),
-      with real, verified support-line numbers. The current wording uses invented numbers on
-      purpose, and the sender refuses to send invented numbers to a real phone.
+      with real, verified support-line numbers. The provisional wording includes real public
+      support numbers; their current availability and suitability still require verification and
+      clinical approval. Example patient and recipient identities are invented. The sender's
+      recipient and placeholder safeguards do not approve message copy or support services.
    2. Complete a privacy impact assessment and review the hazard log
       (`docs/caring-contacts/hazard-log.md`).
    3. Record the approvals as a pathway version in the app (Templates screen).
