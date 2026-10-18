@@ -73,6 +73,13 @@ npm run test:e2e   # the browser journeys
 `npm run lint`, `npm run format:check` and `npm run format` (which fixes formatting) can also
 be run on their own.
 
+On a failed browser CI job, the workflow admits a complete trace archive only when its
+measured size is at most 8 MiB. The pinned upload action sends that one tar file unchanged,
+retained for seven days as `playwright-traces.tar`. If traces are missing, unsupported or
+over the cap, CI reports the refusal, keeps the job failed and uploads no partial archive.
+The original test results are not altered. The archive contract can be checked locally with
+`node --test tests/archive-failure-traces.test.mjs`; this does not run browsers or upload data.
+
 `npm run test:e2e` builds a private test copy of the app, starts it, and clicks through the
 four browser journeys. It needs a Chromium browser. If one is not already installed, run
 `npx playwright install chromium` once. To use a Chromium already on the computer instead,

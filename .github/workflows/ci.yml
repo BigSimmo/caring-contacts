@@ -30,6 +30,8 @@ jobs:
         run: npm ci
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      - name: Failure trace archive contract
+        run: node --test tests/archive-failure-traces.test.mjs
       - name: Type check
         run: npm run typecheck
       - name: Lint
@@ -102,10 +104,21 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Build, start and run the browser journeys
         run: npm run test:e2e
-      - name: Keep failure traces
+      - name: Admit complete failure traces within the archive byte cap
         if: failure()
+        id: trace_archive
+        run: >-
+          node scripts/ci/archive-failure-traces.mjs
+          --input test-results
+          --output "$RUNNER_TEMP/playwright-traces.tar"
+          --max-bytes 8388608
+      - name: Keep failure traces
+        if: failure() && steps.trace_archive.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: playwright-traces
-          path: test-results/
+          # Raw single-file mode uses the filename as the artifact name.
+          name: playwright-traces.tar
+          path: ${{ runner.temp }}/playwright-traces.tar
           retention-days: 7
+          if-no-files-found: error
+          archive: false
