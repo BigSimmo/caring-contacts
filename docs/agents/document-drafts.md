@@ -14,7 +14,7 @@ python3 scripts/document-drafts.py reconcile ../task-scratch/document-draft --so
 python3 scripts/document-drafts.py export ../task-scratch/document-draft --source .
 ```
 
-Replace the synthetic path `docs/example.md` with the actual document. Edit only its copy under `draft/`. Resume the same scratch workspace; preparation preserves existing drafts. Reconciliation compares the immutable baseline, latest original and draft, keeps earlier candidates, and merges compatible changes. Inspect and resolve reported conflicts, then acknowledge the candidate with `reconcile ... --resolved docs/example.md`. Editing an already clean candidate also requires explicit review; ordinarily edit the draft and reconcile again.
+Replace the synthetic document argument with the actual document. Edit only its copy under `draft/`. Resume the same scratch workspace; preparation preserves existing drafts. Reconciliation compares the immutable baseline, latest original and draft, keeps earlier candidates, and merges compatible changes. Inspect and resolve reported conflicts, then acknowledge the candidate with `reconcile ... --resolved docs/example.md`. Editing an already clean candidate also requires explicit review; ordinarily edit the draft and reconcile again.
 
 Export emits absolute `path`, current `before_sha256` and `after_base64` fields for the existing integrator. It is a proposal. The integrator must check claims and required gates, establish a serial write, compare the current original hash immediately before applying, and re-reconcile changed inputs. The helper has no apply command and grants no release, takeover, publication or additional authority. Keep governing-rule and substantive conflicts for their authorised decision-maker.
 
